@@ -48,3 +48,28 @@ def variable_volume_cstr_with_jacket(t, state, params):
     dTj_dt = (Fj / Vj) * (Tj0 - Tj) + (UA / (rho_j * Cp_j * Vj)) * (T - Tj)
 
     return [dV_dt, dCA_dt, dCB_dt, dCC_dt, dT_dt, dTj_dt]
+
+def variable_volume_simple_isothermal_cstr(t, state, params):
+    V, CA, CB = state
+
+    # Inlet & Valve-driven Outlet Flows
+    Fin = params[0]                     # Inlet volumetric flow (L/min)
+    kc = params[1]                      # Valve linear flow coefficient (L^0.5 / min)
+    V_sp = params[2]                   # Setpoint reactor volume (L)
+    Fout = kc * (V-V_sp)+Fin            # Outlet volumetric flow (L/min)
+
+    # Inlet Concentrations & Temperature
+    CA0, CB0 = params[3], params[4]  # mol/L
+
+    # Kinetic Parameters and Rate Law
+    k1 = params[5]
+    k2 = params[6]
+    r1 = k1 * CA
+    
+
+    # Differential Equations
+    dV_dt = Fin - Fout
+    dCA_dt = (Fin / V) * (CA0 - CA) - r1
+    dCB_dt = (Fin / V) * (CB0 - CB) + r1
+
+    return [dV_dt, dCA_dt, dCB_dt]
