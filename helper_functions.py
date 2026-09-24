@@ -1,7 +1,13 @@
 import numpy as np
 import pandas as pd
+import scipy
+from scipy.sparse import lil_matrix, csr_matrix
 from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
+import networkx as nx
+import sympy as sp
+from pyomo.contrib.incidence_analysis.dulmage_mendelsohn import dulmage_mendelsohn
+
 
 
 def variable_volume_cstr_with_jacket(t, state, params):
@@ -73,3 +79,59 @@ def variable_volume_simple_isothermal_cstr(t, state, params):
     dCB_dt = (Fin / V) * (CB0 - CB) + r1
 
     return [dV_dt, dCA_dt, dCB_dt]
+
+
+def build_bipartite_graph(equations, variables):
+    """
+    Build a bipartite graph linking equations to the variables they contain,
+    returning both a networkx representation and a scipy sparse incidence matrix.
+
+    Parameters
+    ----------
+    equations : list
+        A list of sympy expressions/equations (e.g. sp.Eq(x + y, 1)),
+        or strings that can be parsed by sympy.
+    variables : list or set
+        A collection of sympy symbols (or strings) representing the variables.
+
+    Returns
+    -------
+    G : networkx.Graph
+        Bipartite graph with equation nodes ('eq_0', 'eq_1', ...) and
+        variable nodes (named by symbol). Equation nodes carry the
+        original equation object as node data.
+    M : scipy.sparse.csr_matrix
+        Incidence matrix of shape (n_equations, n_variables), where
+        M[i, j] = 1 if equation i contains variable j.
+    var_order : list
+        Ordered list of variable names corresponding to columns of M.
+        (Row i of M corresponds to equations[i].)
+    """
+    # Preserve a stable order for variables (needed for matrix columns)
+    var_order = [str(sp.Symbol(v) if isinstance(v, str) else v) for v in variables]
+    var_set = {sp.Symbol(v) if isinstance(v, str) else v for v in variables}
+    var_index = {name: idx for idx, name in enumerate(var_order)}
+
+    n_eq = len(equations)
+    n_var = len(var_order)
+
+    G = nx.Graph()
+    for var in var_order:
+        G.add_node(var, bipartite="variable")
+
+    M = lil_matrix((n_eq, n_var), dtype=np.int8)
+
+    for i, eq in enumerate(equations):
+        if isinstance(eq, str):
+            eq = sp.sympify(eq)
+
+        eq_node = f"eq_{i}"
+        G.add_node(eq_node, bipartite="equation", equation=eq)
+
+        eq_vars = eq.free_symbols & var_set
+        for var in eq_vars:
+            var_name = str(var)
+            G.add_edge(eq_node, var_name)
+            M[i, var_index[var_name]] = 1
+
+    return G, M.tocsr(), var_order
