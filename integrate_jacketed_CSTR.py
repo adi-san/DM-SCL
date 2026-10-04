@@ -7,7 +7,7 @@ t_eval = np.linspace(0, 120, 600)
 
 # Inlet & Valve-driven Outlet Flows
 Fin = 12.0                     # Inlet volumetric flow (L/min)
-kc = .25                       # Valve linear flow coefficient 
+kc = .25                       # Valve linear flow coefficient
 # Inlet Concentrations & Temperature
 CA0, CB0, CC0 = 2.0, 0.0, 0.0  # mol/L
 T0 = 300.0
