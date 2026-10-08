@@ -100,6 +100,16 @@ matrix = sp.coo_matrix([
 	[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
 	[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
 ])
+
+# test dynam of single CSTR using my approach of DM
+matrix = sp.coo_matrix([
+	[1, 0, 0, 0, 0, 1, 0], 
+	[1, 1, 0, 1, 0, 1, 1], 
+	[1, 0, 1, 0, 1, 1, 1], 
+	[1, 0, 0, 0, 0, 1, 0], 
+	[1, 1, 0, 1, 0, 0, 0], 
+	[1, 0, 1, 0, 1, 0, 0]
+])
 # Compute the decomposition
 row_partition, col_partition = dulmage_mendelsohn(matrix)
 
