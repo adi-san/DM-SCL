@@ -199,9 +199,22 @@ matrix=sp.coo_matrix([
 	[0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0], 
 	[0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0], 
 	[0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1]
-]
+])
 
-)
+# add Cc1 to measured, and eliminate the previously well-determined vars
+
+matrix=sp.coo_matrix([
+	[0, 0, 1, 0, 0, 1, 0, 0, 0, 0], 
+	[0, 0, 0, 1, 0, 1, 1, 0, 0, 0], 
+	[0, 0, 0, 0, 1, 0, 1, 0, 0, 0], 
+	[0, 0, 0, 0, 0, 1, 1, 0, 0, 0], 
+	[0, 0, 1, 0, 0, 0, 0, 0, 0, 0], 
+	[1, 0, 0, 1, 0, 0, 0, 0, 0, 0], 
+	[0, 1, 0, 0, 1, 0, 0, 0, 0, 0], 
+	[0, 0, 1, 0, 0, 0, 0, 1, 0, 0], 
+	[1, 0, 0, 1, 0, 0, 0, 0, 1, 0], 
+	[0, 1, 0, 0, 1, 0, 0, 0, 0, 1]
+])
 # Compute the decomposition
 row_partition, col_partition = dulmage_mendelsohn(matrix)
 
