@@ -167,19 +167,19 @@ else:
 
 # I would like to generate training data to learn the heat transfer coefficients
 # vary the F0 that goes into the reactor as this will affect the volumes of the tanks
-# for every F0, vary the inlet temperature of the cooling fluid and the heating fluid to see how the heat transfer coefficients change
+# for every F0, vary the inlet flow of the cooling fluid and the heating fluid to see how the heat transfer coefficients change
 # store the solver results for each combination of F0, TCin, and THin to create a dataset for training a model to predict heat transfer coefficients based on these inputs.
 df = pd.DataFrame(columns=[
-    'F0', 'TCin', 'THin',
+    'F0', 'FjR', 'FH',
     'VR', 'CA1', 'CB1', 'CC1', 'T1', 'TjR', 'VS', 'CARet', 'CBRet', 'CCRet', 'TS', 'TjS'])
 for F0 in np.linspace(5, 15, 10):  # Varying F0 from 5 to 15 m3/h
-    for TCin in np.linspace(280, 300, 10):  # Varying cooling fluid inlet temperature from 280K to 300K
-        for THin in np.linspace(390, 410, 10):  # Varying heating fluid inlet temperature from 390K to 410K
+    for FjR in np.linspace(15, 25, 10):  # Varying cooling fluid inlet flow from 15 to 25 m3/h
+        for FH in np.linspace(5, 15, 10):  # Varying heating fluid inlet flow from 5 to 15 m3/h
             # Update parameters
             params['F0'] = F0
-            params['TCin'] = TCin
-            params['THin'] = THin
-            
+            params['FjR'] = FjR
+            params['FH'] = FH
+
             # Solve the nonlinear system for the current set of parameters
             solution, infodict, ier, mesg = fsolve(steady_state_system, y0_guess, args=(params,), full_output=True)
             
@@ -188,11 +188,11 @@ for F0 in np.linspace(5, 15, 10):  # Varying F0 from 5 to 15 m3/h
                 VR, CA1, CB1, CC1, T1, TjR, VS, CARet, CBRet, CCRet, TS, TjS = solution
                 
                 # Store or print the results as needed for training data
-                print(f"F0: {F0:.2f}, TCin: {TCin:.2f}, THin: {THin:.2f} => VR: {VR:.4f}, VS: {VS:.4f}, TjR: {TjR:.4f}, T1: {T1:.4f},TjS: {TjS:.4f}, TS: {TS:.4f}")
+                print(f"F0: {F0:.2f}, FjR: {FjR:.2f}, FH: {FH:.2f} => VR: {VR:.4f}, VS: {VS:.4f}, TjR: {TjR:.4f}, T1: {T1:.4f},TjS: {TjS:.4f}, TS: {TS:.4f}")
                 # Append the results to the DataFrame
-                df.loc[len(df)] = {'F0': F0, 'TCin': TCin, 'THin': THin,'VR': VR, 'CA1': CA1, 'CB1': CB1, 'CC1': CC1, 'T1': T1, 'TjR': TjR,'VS': VS, 'CARet': CARet, 'CBRet': CBRet, 'CCRet': CCRet, 'TS': TS, 'TjS': TjS}
+                df.loc[len(df)] = {'F0': F0, 'FjR': FjR, 'FH': FH,'VR': VR, 'CA1': CA1, 'CB1': CB1, 'CC1': CC1, 'T1': T1, 'TjR': TjR,'VS': VS, 'CARet': CARet, 'CBRet': CBRet, 'CCRet': CCRet, 'TS': TS, 'TjS': TjS}
             else:
-                print(f"Solver failed for F0: {F0:.2f}, TCin: {TCin:.2f}, THin: {THin:.2f}. Message: {mesg}")
+                print(f"Solver failed for F0: {F0:.2f}, FjR: {FjR:.2f}, FH: {FH:.2f}. Message: {mesg}")
 
 # Save the DataFrame to a CSV file for training data
 df.to_csv('training_data_heat_transfer_coefficients.csv', index=False)
