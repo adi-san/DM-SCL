@@ -1,0 +1,164 @@
+import numpy as np
+from scipy.optimize import fsolve
+
+# =============================================================================
+# 1. PARAMETERS & SPECIFIED CONSTANTS
+# =============================================================================
+params = {
+    # Operating & Feed Conditions """Can change F0, CA0, T0 when testing different scenarios. Fpg and Fperm are fixed"""
+    
+    'F0': 10.0,          # Feed flow rate [m3/h]
+    'CA0': 1.0,          # Feed concentration of component A [kmol/m3]
+    'T0': 360.0,         # Feed temperature [K]
+
+    'Fpg': 0.2,          # Purge flow rate [m3/h]
+    'Fperm': 5.5,        # Permeate flow rate [m3/h]
+    
+    # Fluid Properties """These should not be changed"""
+    
+    'rho': 1000.0,       # Reaction fluid density [kg/m3]
+    'Cp': 4.184,         # Reaction fluid heat capacity [kJ/(kg·K)]
+    'rhoc': 1000.0,      # Cooling fluid density [kg/m3]
+    'Cpc': 4.184,        # Cooling fluid heat capacity [kJ/(kg·K)]
+    'rhoH': 1000.0,      # Heating fluid density [kg/m3]
+    'CpH': 4.184,        # Heating fluid heat capacity [kJ/(kg·K)]
+    
+    # Reaction Enthalpies & Kinetics """These should not be changed"""
+    
+    'dH1': -50000.0,     # Enthalpy of reaction 1 [kJ/kmol] (exothermic)
+    'dH2': -30000.0,     # Enthalpy of reaction 2 [kJ/kmol] (exothermic)
+    'A1': 1e6,           # Arrhenius pre-exponential factor 1 [1/h]
+    'EA1': 40000.0,      # Activation energy 1 [J/mol]
+    'A2': 5e5,           # Arrhenius pre-exponential factor 2 [1/h]
+    'EA2': 35000.0,      # Activation energy 2 [J/mol]
+    'R': 8.314,          # Universal gas constant [J/(mol·K)]
+    
+    # Separation & Permeation Properties """These should not be changed"""
+    
+    'dGA': 1000.0,       # Gibbs energy parameter for A [J/mol]
+    'dGB': 2000.0,       # Gibbs energy parameter for B [J/mol]
+    'dGC': 3000.0,       # Gibbs energy parameter for C [J/mol]
+    
+    # Heat Transfer & Jackets """FjR, TCin, FH, THin can be changed to test different scenarios. VjR, VjS, UaR, UaS should not be changed"""
+    
+    'VjR': 2.0,          # Reactor jacket volume [m3]
+    'FjR': 20.0,         # Cooling fluid flow rate [m3/h]
+    'TCin': 290.0,       # Cooling fluid inlet temperature [K]
+    'VjS': 1.5,          # Separator jacket volume [m3]
+    'FH': 10.0,          # Heating fluid flow rate [m3/h]
+    'THin': 400.0,       # Heating fluid inlet temperature [K]
+    'UaR': 5000.0,       # Volumetric heat transfer coeff. (reactor) [kJ/(m3·h·K)]
+    'UaS': 4000.0,       # Volumetric heat transfer coeff. (separator) [kJ/(m3·h·K)]
+    
+    # Hydraulic Valve Constants """These should not be changed"""
+    
+    'kvR': 2.5,          # Reactor discharge valve constant [m3/h / sqrt(m3)]
+    'kvS': 2.0           # Separator discharge valve constant [m3/h / sqrt(m3)]
+}
+
+# =============================================================================
+# 2. STEADY-STATE ALGEBRAIC SYSTEM (Derivatives = 0)
+# =============================================================================
+def steady_state_system(y, p):
+    """
+    Returns the derivatives (which we want to be exactly 0).
+    Time 't' is removed from the signature.
+    """
+    VR, CA1, CB1, CC1, T1, TjR, VS, CARet, CBRet, CCRet, TS, TjS = y
+
+    # --- Algebraic Equations ---
+    F1 = p['kvR'] * np.sqrt(max(VR, 1e-6))
+    FRet = p['kvS'] * np.sqrt(max(VS, 1e-6))
+    FR = p['Fperm'] - p['Fpg']
+
+    # Partition coefficients
+    kappa_A = np.exp(-p['dGA'] / (p['R'] * TS))
+    kappa_B = np.exp(-p['dGB'] / (p['R'] * TS))
+    kappa_C = np.exp(-p['dGC'] / (p['R'] * TS))
+
+    # Permeate concentrations
+    CAPerm = kappa_A * CARet
+    CBPerm = kappa_B * CBRet
+    CCPerm = kappa_C * CCRet
+
+    # Reaction rates
+    r1 = p['A1'] * np.exp(-p['EA1'] / (p['R'] * T1)) * CA1
+    r2 = p['A2'] * np.exp(-p['EA2'] / (p['R'] * T1)) * CB1
+
+    # Heat transfer rates
+    theta_QR = p['UaR'] * VR * (T1 - TjR)
+    theta_QS = p['UaS'] * VS * (TjS - TS)
+
+    # --- Steady State Balances (d(Var)/dt = 0) ---
+    # Reactor balance
+    dVR_dt = p['F0'] + FR - F1
+    dCA1_dt = (p['F0'] / VR) * (p['CA0'] - CA1) + (FR / VR) * (CAPerm - CA1) - r1
+    dCB1_dt = -(p['F0'] / VR) * CB1 + (FR / VR) * (CBPerm - CB1) + r1 - r2
+    dCC1_dt = -(p['F0'] / VR) * CC1 + (FR / VR) * (CCPerm - CC1) + r2
+    dT1_dt = ((p['F0'] * (p['T0'] - T1) + FR * (TS - T1)) / VR 
+              + (-p['dH1'] * r1 - p['dH2'] * r2) / (p['rho'] * p['Cp']) 
+              - theta_QR / (p['rho'] * p['Cp'] * VR))
+    dTjR_dt = (p['FjR'] / p['VjR']) * (p['TCin'] - TjR) + theta_QR / (p['rhoc'] * p['Cpc'] * p['VjR'])
+
+    # Separator balance
+    dVS_dt = F1 - FRet - FR - p['Fpg']
+    dCARet_dt = (F1 / VS) * (CA1 - CARet) + ((FR + p['Fpg']) / VS) * (CARet - CAPerm)
+    dCBRet_dt = (F1 / VS) * (CB1 - CBRet) + ((FR + p['Fpg']) / VS) * (CBRet - CBPerm)
+    dCCRet_dt = (F1 / VS) * (CC1 - CCRet) + ((FR + p['Fpg']) / VS) * (CCRet - CCPerm)
+    dTS_dt = (F1 / VS) * (T1 - TS) + theta_QS / (p['rho'] * p['Cp'] * VS)
+    dTjS_dt = (p['FH'] / p['VjS']) * (p['THin'] - TjS) - theta_QS / (p['rhoH'] * p['CpH'] * p['VjS'])
+
+    return [dVR_dt, dCA1_dt, dCB1_dt, dCC1_dt, dT1_dt, dTjR_dt,
+            dVS_dt, dCARet_dt, dCBRet_dt, dCCRet_dt, dTS_dt, dTjS_dt]
+
+# =============================================================================
+# 3. ROOT FINDING (SOLVING FOR STEADY STATE)
+# =============================================================================
+# Initial guess for the roots. 
+# Using small non-zero values for concentrations avoids potential division/multiplication by zero issues during solver iterations.
+y0_guess = [
+    10.0,             # VR_guess [m3]
+    0.5,              # CA1_guess [kmol/m3]
+    0.1,              # CB1_guess [kmol/m3]
+    0.1,              # CC1_guess [kmol/m3]
+    340.0,            # T1_guess [K]
+    300.0,            # TjR_guess [K]
+    5.0,              # VS_guess [m3]
+    0.5,              # CARet_guess [kmol/m3]
+    0.1,              # CBRet_guess [kmol/m3]
+    0.1,              # CCRet_guess [kmol/m3]
+    params['TCin'],   # TS_guess [K]
+    params['THin']    # TjS_guess [K]
+]
+
+# Solve the nonlinear system
+solution, infodict, ier, mesg = fsolve(steady_state_system, y0_guess, args=(params,), full_output=True)
+
+# =============================================================================
+# 4. OUTPUT RESULTS
+# =============================================================================
+if ier == 1:
+    print("Steady-state successfully found!\n")
+    state_names = [
+        "Reactor Volume (VR)", "Reactor Conc. A (CA1)", "Reactor Conc. B (CB1)", "Reactor Conc. C (CC1)", 
+        "Reactor Temp (T1)", "Reactor Jacket Temp (TjR)", "Separator Volume (VS)", 
+        "Retentate Conc. A (CARet)", "Retentate Conc. B (CBRet)", "Retentate Conc. C (CCRet)", 
+        "Separator Temp (TS)", "Separator Jacket Temp (TjS)"
+    ]
+    
+    units = [
+        "[m^3]", "[kmol/m^3]", "[kmol/m^3]", "[kmol/m^3]", 
+        "[K]", "[K]", "[m^3]", 
+        "[kmol/m^3]", "[kmol/m^3]", "[kmol/m^3]", 
+        "[K]", "[K]"
+    ]
+    
+    print("-" * 50)
+    print(f"{'State Variable':<30} | {'Value':>10} | {'Unit'}")
+    print("-" * 50)
+    for name, val, unit in zip(state_names, solution, units):
+        print(f"{name:<30} | {val:10.4f} | {unit}")
+    print("-" * 50)
+else:
+    print("Solver failed to converge.")
+    print("Message:", mesg)

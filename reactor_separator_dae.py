@@ -9,8 +9,8 @@ params = {
     # Operating & Feed Conditions
     'F0': 10.0,          # Feed flow rate [m3/h]
     'CA0': 1.0,          # Feed concentration of component A [kmol/m3]
-    'T0': 350.0,         # Feed temperature [K]
-    'Fpg': 0.5,          # Purge flow rate [m3/h]
+    'T0': 360.0,         # Feed temperature [K]
+    'Fpg': 0.2,          # Purge flow rate [m3/h]
     'Fperm': 5.5,        # Permeate flow rate [m3/h]
     
     # Fluid Properties
@@ -27,7 +27,7 @@ params = {
     'A1': 1e6,           # Arrhenius pre-exponential factor 1 [1/h]
     'EA1': 40000.0,      # Activation energy 1 [J/mol]
     'A2': 5e5,           # Arrhenius pre-exponential factor 2 [1/h]
-    'EA2': 45000.0,      # Activation energy 2 [J/mol]
+    'EA2': 35000.0,      # Activation energy 2 [J/mol]
     'R': 8.314,          # Universal gas constant [J/(mol·K)]
     
     # Separation & Permeation Properties (0 < dGA < dGB < dGC)
@@ -41,7 +41,7 @@ params = {
     'TCin': 290.0,       # Cooling fluid inlet temperature [K]
     'VjS': 1.5,          # Separator jacket volume [m3]
     'FH': 10.0,          # Heating fluid flow rate [m3/h]
-    'THin': 380.0,       # Heating fluid inlet temperature [K]
+    'THin': 400.0,       # Heating fluid inlet temperature [K]
     'UaR': 5000.0,       # Volumetric heat transfer coeff. (reactor) [kJ/(m3·h·K)]
     'UaS': 4000.0,       # Volumetric heat transfer coeff. (separator) [kJ/(m3·h·K)]
     
@@ -133,8 +133,8 @@ y0 = [
     0,    # CARet_0 [kmol/m3]
     0,    # CBRet_0 [kmol/m3]
     0,    # CCRet_0 [kmol/m3]
-    300.0,  # TS_0 [K]
-    370.0   # TjS_0 [K]
+    params['TCin'],  # TS_0 [K]
+    params['THin']   # TjS_0 [K]
 ]
 
 t_span = (0.0, 20.0)             # Time span in hours
