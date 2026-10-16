@@ -25,21 +25,41 @@ params = {
 data = pd.read_csv('training_data_heat_transfer_coefficients.csv')
 print("Training data loaded successfully. Data shape:", data.shape)
  
-# ---------------- constitutive terms (computed from CLEAN data) ----------------
-r1 = data['CA1'] * params['A1'] * np.exp(-params['EA1'] / (params['R'] * data['T1']))
-r2 = data['CB1'] * params['A2'] * np.exp(-params['EA2'] / (params['R'] * data['T1']))
-K_A = np.exp(-params['dGA'] / (params['R'] * data['TS']))
-K_B = np.exp(-params['dGB'] / (params['R'] * data['TS']))
-K_C = np.exp(-params['dGC'] / (params['R'] * data['TS']))
-theta_QR = params['UaR'] * data['VR'] * (data['T1'] - data['TjR'])
-theta_QS = params['UaS'] * data['VS'] * (data['TjS'] - data['TS'])
+
  
 # ---------------- add gaussian noise ----------------
 clean = data.copy()
-noise_level = 0.005  # 0.5%
+noise_level = 0.005  # 0.3%
 for col in ['VR', 'VS', 'TjR', 'TjS', 'T1', 'TS', 'CA1', 'CB1']:
     data[col] += data[col] * noise_level * np.random.randn(len(data))
- 
+
+# ---------------- constitutive terms (computed from CLEAN data) ----------------
+r1_clean = clean['CA1'] * params['A1'] * np.exp(-params['EA1'] / (params['R'] * clean['T1']))
+r2_clean = clean['CB1'] * params['A2'] * np.exp(-params['EA2'] / (params['R'] * clean['T1']))
+K_A_clean = np.exp(-params['dGA'] / (params['R'] * clean['TS']))
+K_B_clean = np.exp(-params['dGB'] / (params['R'] * clean['TS']))
+K_C_clean = np.exp(-params['dGC'] / (params['R'] * clean['TS']))
+theta_QR_clean = params['UaR'] * clean['VR'] * (clean['T1'] - clean['TjR'])
+theta_QS_clean = params['UaS'] * clean['VS'] * (clean['TjS'] - clean['TS'])
+
+# add noise to the outputs eg y=f(x) + noise
+r1 = r1_clean + r1_clean * noise_level * np.random.randn(len(clean))
+r2 = r2_clean + r2_clean * noise_level * np.random.randn(len(clean))
+K_A = K_A_clean + K_A_clean * noise_level * np.random.randn(len(clean))
+K_B = K_B_clean + K_B_clean * noise_level * np.random.randn(len(clean))
+K_C = K_C_clean + K_C_clean * noise_level * np.random.randn(len(clean))
+theta_QR = theta_QR_clean + theta_QR_clean * noise_level * np.random.randn(len(clean))
+theta_QS = theta_QS_clean + theta_QS_clean * noise_level * np.random.randn(len(clean))
+
+# clean outputs (no noise) for training the NNs
+r1 = r1_clean
+r2 = r2_clean
+K_A = K_A_clean
+K_B = K_B_clean
+K_C = K_C_clean
+theta_QR = theta_QR_clean
+theta_QS = theta_QS_clean
+
 # ---------------- plot: with vs without noise ----------------
 fig, axes = plt.subplots(2, 4, figsize=(16, 7))
 for ax, col in zip(axes.ravel(), ['VR', 'VS', 'TjR', 'TjS', 'T1', 'TS', 'CA1', 'CB1']):
@@ -53,7 +73,7 @@ plt.close()
  
 # ---------------- NN definition ----------------
 class MLP(nn.Module):
-    def __init__(self, n_in, n_out=1, hidden=64):
+    def __init__(self, n_in, n_out=1, hidden=8):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(n_in, hidden), nn.Tanh(),
@@ -63,7 +83,7 @@ class MLP(nn.Module):
     def forward(self, x):
         return self.net(x)
  
-def train_theta(X_df, y, name, epochs=2000, lr=1e-3, seed=0):
+def train_theta(X_df, y, name, epochs=5000, lr=1e-3, seed=0):
     """Train on NOISY inputs X_df -> CLEAN target(s) y (Series = 1 output, DataFrame = multiple outputs)."""
     rng = np.random.RandomState(seed)
     X = X_df.values.astype(np.float32)
