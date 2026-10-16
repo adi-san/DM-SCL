@@ -6,9 +6,9 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from sklearn.gaussian_process import GaussianProcessRegressor as GPR
 from sklearn.gaussian_process.kernels import ConstantKernel as C, Matern, WhiteKernel
- 
+
 np.random.seed(0)
- 
+
 params = {
     'F0': 10.0, 'CA0': 1.0, 'T0': 360.0, 'Fpg': 0.2, 'Fperm': 5.5,
     'rho': 1000.0, 'Cp': 4.184, 'rhoc': 1000.0, 'Cpc': 4.184, 'rhoH': 1000.0, 'CpH': 4.184,
@@ -23,20 +23,25 @@ data = pd.read_csv('training_data_heat_transfer_coefficients.csv')
 print("Training data loaded successfully. Data shape:", data.shape)
 
 # ---------------- constitutive terms (computed from CLEAN data) ----------------
-r1 = data['CA1'] * params['A1'] * np.exp(-params['EA1'] / (params['R'] * data['T1']))
-r2 = data['CB1'] * params['A2'] * np.exp(-params['EA2'] / (params['R'] * data['T1']))
-K_A = np.exp(-params['dGA'] / (params['R'] * data['TS']))
-K_B = np.exp(-params['dGB'] / (params['R'] * data['TS']))
-K_C = np.exp(-params['dGC'] / (params['R'] * data['TS']))
-theta_QR = params['UaR'] * data['VR'] * (data['T1'] - data['TjR'])
-theta_QS = params['UaS'] * data['VS'] * (data['TjS'] - data['TS'])
-K_df = pd.DataFrame({'K_A': K_A, 'K_B': K_B, 'K_C': K_C})
- 
-# ---------------- add gaussian (multiplicative) noise to the inputs ----------------
-# 0.5% noise is a reasonable assumption for the input measurements; it is small enough that the GP can still learn the underlying function, but large enough to make the NIGP model useful.
-NOISE_LEVEL = 0.01
-for col in ['VR', 'VS', 'TjR', 'TjS', 'T1', 'TS', 'CA1', 'CB1']:
-    data[col] += data[col] * NOISE_LEVEL * np.random.randn(len(data))
+clean = data.copy()
+r1_clean = clean['CA1'] * params['A1'] * np.exp(-params['EA1'] / (params['R'] * clean['T1']))
+r2_clean = clean['CB1'] * params['A2'] * np.exp(-params['EA2'] / (params['R'] * clean['T1']))
+K_A_clean = np.exp(-params['dGA'] / (params['R'] * clean['TS']))
+K_B_clean = np.exp(-params['dGB'] / (params['R'] * clean['TS']))
+K_C_clean = np.exp(-params['dGC'] / (params['R'] * clean['TS']))
+theta_QR_clean = params['UaR'] * clean['VR'] * (clean['T1'] - clean['TjR'])
+theta_QS_clean = params['UaS'] * clean['VS'] * (clean['TjS'] - clean['TS'])
+K_df_clean = pd.DataFrame({'K_A': K_A_clean, 'K_B': K_B_clean, 'K_C': K_C_clean})
+
+# ---------------- add gaussian (multiplicative) noise to the OUTPUTS ----------------
+# inputs stay clean; y = f(x) + f(x) * noise_level * N(0, 1)  (same as traditional_NNs.py)
+NOISE_LEVEL = 0.03
+def add_noise(y_clean):
+    return y_clean + y_clean * NOISE_LEVEL * np.random.randn(*y_clean.shape)
+
+r1, r2 = add_noise(r1_clean), add_noise(r2_clean)
+theta_QR, theta_QS = add_noise(theta_QR_clean), add_noise(theta_QS_clean)
+K_df = add_noise(K_df_clean)
 
 # ---------------- GP helpers ----------------
 def make_kernel(d):
@@ -46,29 +51,15 @@ def make_kernel(d):
             + WhiteKernel(1e-2, (1e-8, 1.0)))
  
  
-def slope_var(gp, Xs, sx, eps=1e-3):
-    """Variance added to each output by input noise: sum_j (df/dx_j * sigma_xj)^2.
-    Xs, sx are in standardized units. Returns (n, n_out)."""
-    n, d = Xs.shape
-    var = 0.0
-    for j in range(d):
-        Xp, Xm = Xs.copy(), Xs.copy()
-        Xp[:, j] += eps
-        Xm[:, j] -= eps
-        g = (gp.predict(Xp) - gp.predict(Xm)).reshape(n, -1) / (2 * eps)
-        var = var + (g * sx[:, [j]]) ** 2
-    return var
- 
- 
-def fit_gp(X_df, y, name, mode='plain', max_train=800, n_restarts=2, seed=0):
-    """mode='plain': standard GP with a learned constant noise term.
-       mode='nigp' : noisy-input GP; per-sample noise variance = (slope * input-noise-std)^2,
-                     with the slope taken from a first-pass GP (iterated twice)."""
+def fit_gp(X_df, y, y_clean, name, mode='plain', max_train=800, n_restarts=2, seed=0):
+    """Clean inputs X_df -> noisy target(s) y; the WhiteKernel learns the output noise.
+    Test R^2/RMSE are computed against y_clean; coverage is against the noisy y."""
     rng = np.random.RandomState(seed)
     X = X_df.values.astype(float)
     y_df = y.to_frame() if isinstance(y, pd.Series) else y
     out_names = [name] if isinstance(y, pd.Series) else list(y_df.columns)
     Y = y_df.values.astype(float)
+    Yc = (y_clean.to_frame() if isinstance(y_clean, pd.Series) else y_clean).values.astype(float)
     n_out = Y.shape[1]
  
     # same 70/15/15 split as the NN script; GP trains on train+val (no early stopping needed)
@@ -82,36 +73,25 @@ def fit_gp(X_df, y, name, mode='plain', max_train=800, n_restarts=2, seed=0):
     ym, ys = Y[fit_idx].mean(0), Y[fit_idx].std(0) + 1e-12
     Xtr, Ytr = (X[fit_idx] - xm) / xs, (Y[fit_idx] - ym) / ys
     Xte = (X[te] - xm) / xs
-    sx_tr = NOISE_LEVEL * np.abs(X[fit_idx]) / xs      # input-noise std, standardized units
-    sx_te = NOISE_LEVEL * np.abs(X[te]) / xs
     d = X.shape[1]
  
-    def new_gp(alpha=1e-8):
-        return GPR(make_kernel(d), alpha=alpha, n_restarts_optimizer=n_restarts, random_state=seed)
- 
-    gp = new_gp().fit(Xtr, Ytr)
-    if mode == 'nigp':
-        for _ in range(2):
-            alpha = slope_var(gp, Xtr, sx_tr).mean(1) + 1e-8   # shared across outputs
-            gp = new_gp(alpha).fit(Xtr, Ytr)
- 
+    gp = GPR(make_kernel(d), alpha=1e-8, n_restarts_optimizer=n_restarts, random_state=seed).fit(Xtr, Ytr)
+
     # predict; GP std already includes the learned white-noise term
     mu, std = gp.predict(Xte, return_std=True)
     mu, std = mu.reshape(len(te), -1), np.asarray(std).reshape(len(te), -1)
     if std.shape[1] == 1 and n_out > 1:
         std = np.repeat(std, n_out, axis=1)
-    if mode == 'nigp':
-        std = np.sqrt(std ** 2 + slope_var(gp, Xte, sx_te))
-    pred, sd, true = mu * ys + ym, std * ys, Y[te]
- 
+    pred, sd, true, noisy = mu * ys + ym, std * ys, Yc[te], Y[te]
+
     print(f"[{mode}:{name}] kernel: {gp.kernel_}")
     metrics = []
     for j, o in enumerate(out_names):
         err = pred[:, j] - true[:, j]
         rmse = float(np.sqrt(np.mean(err ** 2)))
         r2 = float(1 - np.sum(err ** 2) / np.sum((true[:, j] - true[:, j].mean()) ** 2))
-        cov = float(np.mean(np.abs(err) <= 1.96 * sd[:, j]))
-        print(f"[{mode}:{name}] TEST {o}: RMSE = {rmse:.5g}  R^2 = {r2:.4f}  95% coverage = {cov:.2f}")
+        cov = float(np.mean(np.abs(pred[:, j] - noisy[:, j]) <= 1.96 * sd[:, j]))
+        print(f"[{mode}:{name}] TEST {o}: RMSE(clean) = {rmse:.5g}  R^2(clean) = {r2:.4f}  95% coverage(noisy) = {cov:.2f}")
         metrics.append({'target': o, 'model': mode, 'RMSE': rmse, 'R2': r2,
                         'cov95': cov, 'n_train': len(fit_idx), 'n_test': len(te)})
  
@@ -132,25 +112,25 @@ def fit_gp(X_df, y, name, mode='plain', max_train=800, n_restarts=2, seed=0):
     return gp, (xm, xs, ym, ys), metrics
  
  
-# ---------------- targets: name -> (noisy input columns, clean target(s)) ----------------
+# ---------------- targets: name -> (clean input columns, noisy target(s), clean target(s)) ----------------
 targets = {
-    'theta_QR': (['VR', 'T1', 'TjR'], theta_QR),
-    'theta_QS': (['VS', 'TS', 'TjS'], theta_QS),
-    'r1':       (['CA1', 'T1'],       r1),
-    'r2':       (['CB1', 'T1'],       r2),
-    'K_ABC':    (['TS'],              K_df),     # 1 input -> 3 outputs (shared kernel)
+    'theta_QR': (['VR', 'T1', 'TjR'], theta_QR, theta_QR_clean),
+    'theta_QS': (['VS', 'TS', 'TjS'], theta_QS, theta_QS_clean),
+    'r1':       (['CA1', 'T1'],       r1,       r1_clean),
+    'r2':       (['CB1', 'T1'],       r2,       r2_clean),
+    'K_ABC':    (['TS'],              K_df,     K_df_clean),   # 1 input -> 3 outputs (shared kernel)
 }
- 
+
 results = []
-for mode in ['plain', 'nigp']:
-    for name, (cols, y) in targets.items():
-        print(f"\n=== {mode.upper()} GP: {name}({', '.join(cols)}) ===")
-        gp, sc, metrics = fit_gp(data[cols], y, name, mode=mode)
-        results.extend(metrics)
-        joblib.dump({'gp': gp, 'inputs': cols, 'xm': sc[0], 'xs': sc[1], 'ym': sc[2], 'ys': sc[3],
-                     'outputs': list(y.columns) if isinstance(y, pd.DataFrame) else [name]},
-                    f'gp_{mode}_{name}.joblib')
- 
+mode = 'plain'      # NIGP dropped: inputs are clean, so there is no input noise to model
+for name, (cols, y, y_clean) in targets.items():
+    print(f"\n=== {mode.upper()} GP: {name}({', '.join(cols)}) ===")
+    gp, sc, metrics = fit_gp(clean[cols], y, y_clean, name, mode=mode)
+    results.extend(metrics)
+    joblib.dump({'gp': gp, 'inputs': cols, 'xm': sc[0], 'xs': sc[1], 'ym': sc[2], 'ys': sc[3],
+                 'outputs': list(y.columns) if isinstance(y, pd.DataFrame) else [name]},
+                f'gp_{mode}_{name}.joblib')
+
 summary = pd.DataFrame(results).set_index(['target', 'model'])
 print("\n=== Test-set summary ===")
 print(summary)

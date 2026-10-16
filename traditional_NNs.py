@@ -29,7 +29,7 @@ print("Training data loaded successfully. Data shape:", data.shape)
  
 # ---------------- add gaussian noise ----------------
 clean = data.copy()
-noise_level = 0.005  # 0.5%
+noise_level = 0.03  # 0.5%
 
 # for col in ['VR', 'VS', 'TjR', 'TjS', 'T1', 'TS', 'CA1', 'CB1']:
 #     data[col] += data[col] * noise_level * np.random.randn(len(data))
@@ -63,9 +63,11 @@ theta_QS = theta_QS_clean + theta_QS_clean * noise_level * np.random.randn(len(c
 
 # ---------------- plot: with vs without noise ----------------
 fig, axes = plt.subplots(2, 4, figsize=(16, 7))
-for ax, col in zip(axes.ravel(), ['VR', 'VS', 'TjR', 'TjS', 'T1', 'TS', 'CA1', 'CB1']):
-    ax.plot(clean[col].values, label='clean', lw=1.5)
-    ax.plot(data[col].values, label='noisy', lw=0.7, alpha=0.7)
+noise_pairs = {'r1': (r1_clean, r1), 'r2': (r2_clean, r2), 'K_A': (K_A_clean, K_A), 'K_B': (K_B_clean, K_B),
+               'K_C': (K_C_clean, K_C), 'theta_QR': (theta_QR_clean, theta_QR), 'theta_QS': (theta_QS_clean, theta_QS)}
+for ax, (col, (yc, yn)) in zip(axes.ravel(), noise_pairs.items()):
+    ax.plot(np.asarray(yc), label='clean', lw=1.5)
+    ax.plot(np.asarray(yn), label='noisy', lw=0.7, alpha=0.7)
     ax.set_title(col)
 axes[0, 0].legend()
 plt.tight_layout()
@@ -77,18 +79,21 @@ class MLP(nn.Module):
     def __init__(self, n_in, n_out=1, hidden=8):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(n_in, hidden), nn.Tanh(),
-            nn.Linear(hidden, hidden), nn.Tanh(),
+            nn.Linear(n_in, hidden), nn.Sigmoid(),
+            nn.Linear(hidden, hidden), nn.Sigmoid(),
             nn.Linear(hidden, n_out),
         )
     def forward(self, x):
         return self.net(x)
  
-def train_theta(X_df, y, name, epochs=5000, lr=1e-3, seed=0):
-    """Train on clean inputs X_df -> noisy target(s) y (Series = 1 output, DataFrame = multiple outputs)."""
+def train_theta(X_df, y, y_clean, name, epochs=3000, lr=1e-3, seed=0):
+    """Train on clean inputs X_df -> noisy target(s) y (Series = 1 output, DataFrame = multiple outputs).
+    Test metrics are computed against y_clean (same shape as y)."""
     rng = np.random.RandomState(seed)
     X = X_df.values.astype(np.float32)
     y_df = y.to_frame() if isinstance(y, pd.Series) else y
+    yc_df = y_clean.to_frame() if isinstance(y_clean, pd.Series) else y_clean
+    Y_clean = yc_df.values.astype(np.float32)
     out_names = [str(c) if c is not None else name for c in y_df.columns]
     if isinstance(y, pd.Series):
         out_names = [name]
@@ -134,14 +139,17 @@ def train_theta(X_df, y, name, epochs=5000, lr=1e-3, seed=0):
     model.eval()
     with torch.no_grad():
         pred = model(Xte).numpy() * ys + ym
-    true = Y[te]
- 
+    true = Y_clean[te]      # score against the underlying noise-free function
+    noisy = Y[te]
+
     metrics = []
     for j, oname in enumerate(out_names):
         rmse = float(np.sqrt(np.mean((pred[:, j] - true[:, j]) ** 2)))
         r2 = float(1 - np.sum((pred[:, j] - true[:, j]) ** 2) / np.sum((true[:, j] - true[:, j].mean()) ** 2))
-        print(f"[{name}] TEST {oname}: RMSE = {rmse:.5g}  R^2 = {r2:.4f}")
-        metrics.append({'target': oname, 'network': name, 'RMSE': rmse, 'R2': r2, 'n_test': len(te)})
+        rmse_noisy = float(np.sqrt(np.mean((pred[:, j] - noisy[:, j]) ** 2)))
+        print(f"[{name}] TEST {oname}: RMSE(clean) = {rmse:.5g}  R^2(clean) = {r2:.4f}  RMSE(noisy) = {rmse_noisy:.5g}")
+        metrics.append({'target': oname, 'network': name, 'RMSE': rmse, 'R2': r2,
+                        'RMSE_noisy': rmse_noisy, 'n_test': len(te)})
  
     fig, ax = plt.subplots(1, 1 + n_out, figsize=(4.5 * (1 + n_out), 4))
     ax[0].semilogy(hist['train'], label='train'); ax[0].semilogy(hist['val'], label='val')
@@ -155,21 +163,22 @@ def train_theta(X_df, y, name, epochs=5000, lr=1e-3, seed=0):
     plt.tight_layout(); plt.savefig(f'{name}_results.png', dpi=150); plt.close()
     return model, (xm, xs, ym, ys), metrics
  
-# ---------------- targets: name -> (noisy input columns, clean target(s)) ----------------
+# ---------------- targets: name -> (clean input columns, noisy target(s), clean target(s)) ----------------
 K_df = pd.DataFrame({'K_A': K_A, 'K_B': K_B, 'K_C': K_C})
- 
+K_df_clean = pd.DataFrame({'K_A': K_A_clean, 'K_B': K_B_clean, 'K_C': K_C_clean})
+
 targets = {
-    'theta_QR': (['VR', 'T1', 'TjR'], theta_QR),
-    'theta_QS': (['VS', 'TS', 'TjS'], theta_QS),
-    'r1':       (['CA1', 'T1'],       r1),
-    'r2':       (['CB1', 'T1'],       r2),
-    'K_ABC':    (['TS'],              K_df),      # 1 input -> 3 outputs
+    'theta_QR': (['VR', 'T1', 'TjR'], theta_QR, theta_QR_clean),
+    'theta_QS': (['VS', 'TS', 'TjS'], theta_QS, theta_QS_clean),
+    'r1':       (['CA1', 'T1'],       r1,       r1_clean),
+    'r2':       (['CB1', 'T1'],       r2,       r2_clean),
+    'K_ABC':    (['TS'],              K_df,     K_df_clean),      # 1 input -> 3 outputs
 }
- 
+
 models, scalers, results = {}, {}, []
-for name, (cols, y) in targets.items():
+for name, (cols, y, y_clean) in targets.items():
     print(f"\n=== Training {name}({', '.join(cols)}) ===")
-    m, sc, metrics = train_theta(data[cols], y, name)
+    m, sc, metrics = train_theta(clean[cols], y, y_clean, name)
     models[name], scalers[name] = m, sc
     results.extend(metrics)
     torch.save({'state_dict': m.state_dict(), 'inputs': cols,
