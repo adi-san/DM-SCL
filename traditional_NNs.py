@@ -29,9 +29,10 @@ print("Training data loaded successfully. Data shape:", data.shape)
  
 # ---------------- add gaussian noise ----------------
 clean = data.copy()
-noise_level = 0.005  # 0.3%
-for col in ['VR', 'VS', 'TjR', 'TjS', 'T1', 'TS', 'CA1', 'CB1']:
-    data[col] += data[col] * noise_level * np.random.randn(len(data))
+noise_level = 0.005  # 0.5%
+
+# for col in ['VR', 'VS', 'TjR', 'TjS', 'T1', 'TS', 'CA1', 'CB1']:
+#     data[col] += data[col] * noise_level * np.random.randn(len(data))
 
 # ---------------- constitutive terms (computed from CLEAN data) ----------------
 r1_clean = clean['CA1'] * params['A1'] * np.exp(-params['EA1'] / (params['R'] * clean['T1']))
@@ -51,14 +52,14 @@ K_C = K_C_clean + K_C_clean * noise_level * np.random.randn(len(clean))
 theta_QR = theta_QR_clean + theta_QR_clean * noise_level * np.random.randn(len(clean))
 theta_QS = theta_QS_clean + theta_QS_clean * noise_level * np.random.randn(len(clean))
 
-# clean outputs (no noise) for training the NNs
-r1 = r1_clean
-r2 = r2_clean
-K_A = K_A_clean
-K_B = K_B_clean
-K_C = K_C_clean
-theta_QR = theta_QR_clean
-theta_QS = theta_QS_clean
+# # clean outputs (no noise) for training the NNs
+# r1 = r1_clean
+# r2 = r2_clean
+# K_A = K_A_clean
+# K_B = K_B_clean
+# K_C = K_C_clean
+# theta_QR = theta_QR_clean
+# theta_QS = theta_QS_clean
 
 # ---------------- plot: with vs without noise ----------------
 fig, axes = plt.subplots(2, 4, figsize=(16, 7))
@@ -84,7 +85,7 @@ class MLP(nn.Module):
         return self.net(x)
  
 def train_theta(X_df, y, name, epochs=5000, lr=1e-3, seed=0):
-    """Train on NOISY inputs X_df -> CLEAN target(s) y (Series = 1 output, DataFrame = multiple outputs)."""
+    """Train on clean inputs X_df -> noisy target(s) y (Series = 1 output, DataFrame = multiple outputs)."""
     rng = np.random.RandomState(seed)
     X = X_df.values.astype(np.float32)
     y_df = y.to_frame() if isinstance(y, pd.Series) else y

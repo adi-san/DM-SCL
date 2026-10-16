@@ -21,7 +21,7 @@ params = {
 # ---------------- load data ----------------
 data = pd.read_csv('training_data_heat_transfer_coefficients.csv')
 print("Training data loaded successfully. Data shape:", data.shape)
- 
+
 # ---------------- constitutive terms (computed from CLEAN data) ----------------
 r1 = data['CA1'] * params['A1'] * np.exp(-params['EA1'] / (params['R'] * data['T1']))
 r2 = data['CB1'] * params['A2'] * np.exp(-params['EA2'] / (params['R'] * data['T1']))
@@ -34,7 +34,7 @@ K_df = pd.DataFrame({'K_A': K_A, 'K_B': K_B, 'K_C': K_C})
  
 # ---------------- add gaussian (multiplicative) noise to the inputs ----------------
 # 0.5% noise is a reasonable assumption for the input measurements; it is small enough that the GP can still learn the underlying function, but large enough to make the NIGP model useful.
-NOISE_LEVEL = 0.005
+NOISE_LEVEL = 0.01
 for col in ['VR', 'VS', 'TjR', 'TjS', 'T1', 'TS', 'CA1', 'CB1']:
     data[col] += data[col] * NOISE_LEVEL * np.random.randn(len(data))
 
