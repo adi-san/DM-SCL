@@ -29,8 +29,14 @@ print("Training data loaded successfully. Data shape:", data.shape)
  
 # ---------------- add gaussian noise ----------------
 clean = data.copy()
-noise_level = 0.03  # 0.5%
-
+noise_level = 0.01  # 0.5%
+#  for col in all the columns excluding F0, FjR, and FH, add noise to the data
+''''''
+# all_columns=data.columns.tolist()
+# clean_columns=[col for col in all_columns if col not in ['F0', 'FjR', 'FH']]
+# for col in clean_columns:
+#     data[col] += data[col] * noise_level * np.random.randn(len(data))
+''''''
 # for col in ['VR', 'VS', 'TjR', 'TjS', 'T1', 'TS', 'CA1', 'CB1']:
 #     data[col] += data[col] * noise_level * np.random.randn(len(data))
 

@@ -8,7 +8,7 @@ from sklearn.gaussian_process import GaussianProcessRegressor as GPR
 from sklearn.gaussian_process.kernels import ConstantKernel as C, Matern, WhiteKernel
 
 np.random.seed(0)
-
+# hello world
 params = {
     'F0': 10.0, 'CA0': 1.0, 'T0': 360.0, 'Fpg': 0.2, 'Fperm': 5.5,
     'rho': 1000.0, 'Cp': 4.184, 'rhoc': 1000.0, 'Cpc': 4.184, 'rhoH': 1000.0, 'CpH': 4.184,
@@ -35,7 +35,7 @@ K_df_clean = pd.DataFrame({'K_A': K_A_clean, 'K_B': K_B_clean, 'K_C': K_C_clean}
 
 # ---------------- add gaussian (multiplicative) noise to the OUTPUTS ----------------
 # inputs stay clean; y = f(x) + f(x) * noise_level * N(0, 1)  (same as traditional_NNs.py)
-NOISE_LEVEL = 0.03
+NOISE_LEVEL = 0.01
 def add_noise(y_clean):
     return y_clean + y_clean * NOISE_LEVEL * np.random.randn(*y_clean.shape)
 
