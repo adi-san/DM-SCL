@@ -17,7 +17,7 @@ data_copy = data.copy()
 data_copy_2=data.copy()
 data_copy_3=data.copy()
 
-noise_level = 0.01  # 1% noise
+noise_level = 0.005  # 1% noise
 # add noise to the data for all columns except F0, FjR, and FH
 columns_to_add_noise = [col for col in data.columns if col not in ['F0', 'FjR', 'FH']]
 for col in columns_to_add_noise:
