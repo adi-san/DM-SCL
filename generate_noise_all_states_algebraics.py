@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 from scipy.optimize import fsolve, least_squares
 
+np.random.seed(0)  # fix the noise so outputs are reproducible across runs
+
 params = {
     'F0': 10.0, 'CA0': 1.0, 'T0': 360.0, 'Fpg': 0.2, 'Fperm': 5.5,
     'rho': 1000.0, 'Cp': 4.184, 'rhoc': 1000.0, 'Cpc': 4.184, 'rhoH': 1000.0, 'CpH': 4.184,
@@ -17,11 +19,15 @@ data_copy = data.copy()
 data_copy_2=data.copy()
 data_copy_3=data.copy()
 
-noise_level = 0.005  # 1% noise
+noise_level = 0.001  # 0.3% noise
 # add noise to the data for all columns except F0, FjR, and FH
 columns_to_add_noise = [col for col in data.columns if col not in ['F0', 'FjR', 'FH']]
 for col in columns_to_add_noise:
-    data[col] += data[col] * noise_level * np.random.randn(len(data))
+    # ensure that noise is generated homoscedastically, here it is heteroscedastic
+    min_col = data[col].min()
+    max_col = data[col].max()
+    ref_magnitude=min_col/2+max_col/2
+    data[col] += ref_magnitude * noise_level * np.random.randn(len(data))
 
 # calculate the constitutive terms from the noisy data using skeleton eqns
 theta_QR = -params['rhoc']*params['Cpc']*data['FjR']*(params['TCin']-data['TjR'])
@@ -41,12 +47,43 @@ data['K_B'] = K_B
 data['K_C'] = K_C
 data.to_csv('noisy_states_algebraics_for_all.csv', index=False)
 
+# make parity plots of all the columns with x axes being non-noisy from simulation and y_axes being their corresponding values in data
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+# data_copy is still the clean simulation at this point (noise was added to data in place)
+parity_vars_all = list(data.columns)
+n_cols_plot = 7
+n_rows_plot = int(np.ceil(len(parity_vars_all) / n_cols_plot))
+fig, axes = plt.subplots(n_rows_plot, n_cols_plot, figsize=(4 * n_cols_plot, 3.6 * n_rows_plot))
+for ax, var in zip(axes.ravel(), parity_vars_all):
+    x = data_copy[var].to_numpy(dtype=float)
+    y = data[var].to_numpy(dtype=float)
+    ss_tot = np.sum((x - x.mean()) ** 2)
+    r2_val = 1 - np.sum((x - y) ** 2) / ss_tot if ss_tot > 0 else np.nan
+    ax.plot(x, y, 'o', ms=3, alpha=0.7)
+    lims = [min(x.min(), y.min()), max(x.max(), y.max())]
+    ax.plot(lims, lims, 'k--')
+    ax.set_xlabel(f'simulated {var} (no noise)')
+    ax.set_ylabel(f'{var} (noisy)')
+    ax.set_title(f'{var}  (R² = {r2_val:.4f})')
+for ax in axes.ravel()[len(parity_vars_all):]:
+    ax.axis('off')
+plt.tight_layout()
+plt.savefig('noisy_states_algebraics_for_all_parity.png', dpi=120)
+plt.close(fig)
+print("Saved noisy_states_algebraics_for_all_parity.png")
+
 '''
 With DM, we deem that VR, VS, F1, FR, and FRet are well-det and so they are not noisy. The rest of the states and algebraics are noisy.
 '''
 columns_to_add_noise_DM = [col for col in data_copy.columns if col not in ['F0', 'FjR', 'FH', 'VR', 'VS', 'F1', 'FR', 'FRet']]
 for col in columns_to_add_noise_DM:
-    data_copy[col] += data_copy[col] * noise_level * np.random.randn(len(data_copy))
+    min_col = data_copy[col].min()
+    max_col = data_copy[col].max()
+    ref_magnitude=min_col/2+max_col/2
+    data_copy[col] += ref_magnitude * noise_level * np.random.randn(len(data_copy))
 
 data_copy_2=data_copy.copy()
 data_copy_3=data_copy.copy()
@@ -151,6 +188,20 @@ def ss_DM_just_heat(y, p):
 
     output=[dTjR_dt,dTS_dt,dTjS_dt]
     return output
+def ss_DM_just_heat_with_invar(p):
+    
+    FjR=p['FjR']
+    F1=p['F1']
+    FH=p['FH']
+    VS=p['VS']
+    TjR=p['TjR']
+        
+    T1=p['T1']
+    TS=p['TS']
+    TjS=p['rho'] * p['Cp'] * F1/(p['rhoH'] * p['CpH']*FH)*(T1-TS)+p['THin']
+    theta_QR=-p['rhoc'] * p['Cpc']*FjR*(p['TCin'] - TjR)
+    theta_QS=-p['rho'] * p['Cp'] * F1* (T1-TS)
+    return [TjS,theta_QR,theta_QS]
 
 # solve for the heat-only unknowns row by row
 unknown_names_heat = ['TjS', 'theta_QR', 'theta_QS']
@@ -160,7 +211,10 @@ for i, row in data_copy_2.iterrows():
     # initial guess: noisy row value for TjS, rough magnitudes for heat transfer terms
     y0 = [row['TjS'], 1e6, 1e6]
     sol = fsolve(ss_DM_just_heat, y0, args=(p,))
+    # sol=ss_DM_just_heat_with_invar(p)
+    # 
     res = dict(zip(unknown_names_heat, sol))
+    print(res)
     res['residual_norm'] = np.linalg.norm(ss_DM_just_heat(sol, p))
     res['converged'] = res['residual_norm'] < 1e-6
     results_heat.append(res)
@@ -171,6 +225,28 @@ data_DM_heat = data_copy_2.drop(columns=[c for c in unknown_names_heat if c in d
 print(data_DM_heat[unknown_names_heat + ['converged', 'residual_norm']].to_string())
 print(f"Converged: {data_DM_heat['converged'].sum()}/{len(data_DM_heat)}, max residual norm: {data_DM_heat['residual_norm'].max():.3e}")
 data_DM_heat.to_csv('noisy_heat_DM.csv', index=False)
+
+# make parity plots of T1, TjR, TS, TjS, theta_QR, and theta_QS with x axes being non-noisy from simulation and y_axes being their corresponding values in data_DM_heat
+data_clean = pd.read_csv('simulator_data_no_noise.csv')  # 'data' had noise added in place, so reload the clean simulation
+parity_vars_heat = ['T1', 'TjR', 'TS', 'TjS', 'theta_QR', 'theta_QS']
+fig, axes = plt.subplots(2, 3, figsize=(15, 9))
+for ax, var in zip(axes.ravel(), parity_vars_heat):
+    x = data_clean[var].to_numpy(dtype=float)
+    y = data_DM_heat[var].to_numpy(dtype=float)
+    r2 = 1 - np.sum((x - y) ** 2) / np.sum((x - x.mean()) ** 2)
+    rmse = np.sqrt(np.mean((x - y) ** 2))
+    print(f"{var}: R^2 = {r2:.4f}, RMSE = {rmse:.4g}")
+    ax.plot(x, y, 'o', ms=4, alpha=0.7)
+    lims = [min(x.min(), y.min()), max(x.max(), y.max())]
+    ax.plot(lims, lims, 'k--', label='parity')
+    ax.set_xlabel(f'simulated {var} (no noise)')
+    ax.set_ylabel(f'DM {var} (noisy)')
+    ax.set_title(f'{var}  (R² = {r2:.4f})')
+    ax.legend()
+plt.tight_layout()
+plt.savefig('noisy_heat_DM_parity.png', dpi=150)
+plt.close(fig)
+print("Saved noisy_heat_DM_parity.png")
 
 
 def ss_DM_rK(y, p):

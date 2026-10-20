@@ -172,10 +172,10 @@ else:
 #  also add F1, FR, and FRet to the dataset
 df = pd.DataFrame(columns=[
     'F0', 'FjR', 'FH',
-    'VR', 'CA1', 'CB1', 'CC1', 'T1', 'TjR', 'VS', 'CARet', 'CBRet', 'CCRet', 'TS', 'TjS','CAPerm', 'CBPerm', 'CCPerm','F1', 'FR', 'FRet'])
-for F0 in np.linspace(5, 15, 5):  # Varying F0 from 5 to 15 m3/h
-    for FjR in np.linspace(15, 25, 5):  # Varying cooling fluid inlet flow from 15 to 25 m3/h
-        for FH in np.linspace(5, 15, 5):  # Varying heating fluid inlet flow from 5 to 15 m3/h
+    'VR', 'CA1', 'CB1', 'CC1', 'T1', 'TjR', 'VS', 'CARet', 'CBRet', 'CCRet', 'TS', 'TjS','CAPerm', 'CBPerm', 'CCPerm','F1', 'FR', 'FRet','r1','r2','K_A','K_B','K_C','theta_QR','theta_QS'])
+for F0 in np.linspace(5, 10, 5):  # Varying F0 from 5 to 10 m3/h
+    for FjR in np.linspace(5, 20, 5):  # Varying cooling fluid inlet flow from 15 to 45 m3/h
+        for FH in np.linspace(5, 20, 5):  # Varying heating fluid inlet flow from 5 to 35 m3/h
             # Update parameters
             params['F0'] = F0
             params['FjR'] = FjR
@@ -198,13 +198,26 @@ for F0 in np.linspace(5, 15, 5):  # Varying F0 from 5 to 15 m3/h
                 F1 = params['kvR'] * np.sqrt(max(VR, 1e-6))
                 FRet = params['kvS'] * np.sqrt(max(VS, 1e-6))
                 FR = params['Fperm'] - params['Fpg']
-                
+
+                # add calculated constitutive terms to the DF, compute the rxn rates and heat transfer terms
+                theta_QR=params['UaR']*VR*(T1-TjR)
+                theta_QS=params['UaS']*VS*(TjS-TS)
+                r1=params['A1']*np.exp(-params['EA1'] / (params['R'] * T1))*CA1
+                r2=params['A2']*np.exp(-params['EA2'] / (params['R'] * T1))*CB1
+
                 # Store or print the results as needed for training data adding the permeate concentrations to the dataframe
                 print(f"F0: {F0:.2f}, FjR: {FjR:.2f}, FH: {FH:.2f} => VR: {VR:.4f}, VS: {VS:.4f}, TjR: {TjR:.4f}, T1: {T1:.4f},TjS: {TjS:.4f}, TS: {TS:.4f}")
                 # Append the results to the DataFrame
-                df.loc[len(df)] = {'F0': F0, 'FjR': FjR, 'FH': FH,'VR': VR, 'CA1': CA1, 'CB1': CB1, 'CC1': CC1, 'T1': T1, 'TjR': TjR,'VS': VS, 'CARet': CARet, 'CBRet': CBRet, 'CCRet': CCRet, 'TS': TS, 'TjS': TjS, 'CAPerm': CAPerm, 'CBPerm': CBPerm, 'CCPerm': CCPerm, 'F1': F1, 'FR': FR, 'FRet': FRet}
+                df.loc[len(df)] = {'F0': F0, 'FjR': FjR, 'FH': FH,'VR': VR, 'CA1': CA1, 
+                                   'CB1': CB1, 'CC1': CC1, 'T1': T1, 'TjR': TjR,'VS': VS, 
+                                   'CARet': CARet, 'CBRet': CBRet, 'CCRet': CCRet, 'TS': TS, 
+                                   'TjS': TjS, 'CAPerm': CAPerm, 'CBPerm': CBPerm, 'CCPerm': CCPerm, 
+                                   'F1': F1, 'FR': FR, 'FRet': FRet, 'r1':r1, 'r2':r2,
+                                   'K_A':kappa_A,'K_B':kappa_B,'K_C':kappa_C, 
+                                   'theta_QR':theta_QR, 'theta_QS':theta_QS}
             else:
                 print(f"Solver failed for F0: {F0:.2f}, FjR: {FjR:.2f}, FH: {FH:.2f}. Message: {mesg}")
-
 # Save the DataFrame to a CSV file for training data
+
+# add the other constitutive terms to this df:
 df.to_csv('simulator_data_no_noise.csv', index=False)
