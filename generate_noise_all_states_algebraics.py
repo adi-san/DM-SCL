@@ -19,7 +19,7 @@ data_copy = data.copy()
 data_copy_2=data.copy()
 data_copy_3=data.copy()
 
-noise_level = 0.001  # 0.3% noise
+noise_level = 0.002  # 0.2% noise ensures that temp measurements stay between 2K of actual
 # add noise to the data for all columns except F0, FjR, and FH
 columns_to_add_noise = [col for col in data.columns if col not in ['F0', 'FjR', 'FH']]
 for col in columns_to_add_noise:
@@ -251,7 +251,7 @@ print("Saved noisy_heat_DM_parity.png")
 
 def ss_DM_rK(y, p):
     # if something is measured, it is a parameter for a given solve
-    CA1, CAPerm, CBPerm, CCPerm, r1, r2, K_A, K_B, K_C = y
+    CA1, CB1, CC1, CCPerm, r1, r2, K_A, K_B, K_C = y
     VR=p['VR']
     VS=p['VS']
     F0=p['F0']
@@ -261,8 +261,8 @@ def ss_DM_rK(y, p):
     # FjR=p['FjR']
     # FH=p['FH']
 
-    CB1=p['CB1']
-    CC1=p['CC1']
+    # CB1=p['CB1']
+    # CA1=p['CA1']
     
     # FjR=p['FjR']
     F1=p['F1']
@@ -275,6 +275,9 @@ def ss_DM_rK(y, p):
     CARet=p['CARet']
     CBRet=p['CBRet']
     CCRet=p['CCRet']
+
+    CAPerm = p['CAPerm']
+    CBPerm = p['CBPerm']
 
     dCA1_dt = (F0 / VR) * (CA0 - CA1) + (FR / VR) * (CAPerm - CA1) - r1
     dCB1_dt = -(F0 / VR) * CB1 + (FR / VR) * (CBPerm - CB1) + r1 - r2
@@ -291,13 +294,16 @@ def ss_DM_rK(y, p):
     return output
 
 # solve for the reaction/partition unknowns row by row
-unknown_names_rK = ['CA1', 'CAPerm', 'CBPerm', 'CCPerm', 'r1', 'r2', 'K_A', 'K_B', 'K_C']
+# unknown_names_rK = ['CC1', 'CAPerm', 'CBPerm', 'CCPerm', 'r1', 'r2', 'K_A', 'K_B', 'K_C']
+unknown_names_rK = ['CA1','CB1','CC1', 'CCPerm', 'r1', 'r2', 'K_A', 'K_B', 'K_C']
 results_rK = []
 for i, row in data_copy_3.iterrows():
     p = {**params, **row.to_dict()}  # measured values for this row override defaults (F0, FjR, FH)
     # initial guess: noisy row values for states, rough magnitudes for constitutive terms
-    y0 = [row['CA1'], row['CAPerm'], row['CBPerm'], row['CCPerm'],
-          0.1, 0.1, 0.5, 0.5, 0.5]
+    # y0 = [row['CC1'], row['CAPerm'], row['CBPerm'], row['CCPerm'],
+    #       0.1, 0.1, 0.5, 0.5, 0.5]
+    y0 = [row['CA1'], row['CB1'], row['CC1'], row['CCPerm'],
+              0.1, 0.1, 0.5, 0.5, 0.5]
     sol = fsolve(ss_DM_rK, y0, args=(p,))
     res = dict(zip(unknown_names_rK, sol))
     res['residual_norm'] = np.linalg.norm(ss_DM_rK(sol, p))
@@ -306,9 +312,10 @@ for i, row in data_copy_3.iterrows():
 
 results_rK = pd.DataFrame(results_rK, index=data_copy_3.index)
 # measured columns are kept from data_copy_3, unknown columns are replaced with solved values
+# actually retrieves r1 and r2 well
 data_DM_rK = data_copy_3.drop(columns=[c for c in unknown_names_rK if c in data_copy_3.columns]).join(results_rK)
 print(data_DM_rK[unknown_names_rK + ['converged', 'residual_norm']].to_string())
 print(f"Converged: {data_DM_rK['converged'].sum()}/{len(data_DM_rK)}, max residual norm: {data_DM_rK['residual_norm'].max():.3e}")
 data_DM_rK.to_csv('noisy_r_kappa_DM.csv', index=False)
 
-# the reaction rate terms are nicely measured, the kappa terms need some work!
+# the reaction rate terms are nicely measured with CA1, CB1, along with rets meas, the kappa terms need some work!

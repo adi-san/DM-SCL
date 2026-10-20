@@ -64,26 +64,35 @@ for col, (target, inputs) in enumerate(tasks.items()):
     print(f"{target}: grid R^2 = {r2:.4f}, RMSE = {rmse:.4g} ({100 * rmse / y_true.std():.2f}% of std)")
 
     # parity plot: GP vs actual
-    ax.errorbar(y_true, y_pred, yerr=2 * y_std, fmt='o', ms=3, alpha=0.4, elinewidth=0.5, label='GP mean Â± 2Ïƒ')
+    ax.errorbar(y_true, y_pred, yerr=2 * y_std, fmt='o', ms=3, alpha=0.4, elinewidth=0.5, label='GP mean ± 2σ')
     lims = [min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())]
     ax.plot(lims, lims, 'k--', label='parity')
     ax.set_xlabel(f'actual {target}')
     ax.set_ylabel(f'GP predicted {target}')
-    ax.set_title(f'{target}  (RÂ² = {r2:.4f})')
+    ax.set_title(f'{target}  (R² = {r2:.4f})')
     ax.legend()
 
     # 5-fold cross-validation on the 125 measured points: GP vs measured (held-out) values
     y_cv = np.zeros_like(y)
+    y_cv_std = np.zeros_like(y)
     for tr, te in KFold(5, shuffle=True, random_state=0).split(X):
         m_, s_ = X[tr].mean(0), X[tr].std(0)
         a_, b_ = y[tr].mean(), y[tr].std()
         g = GPR(make_kernel(X.shape[1]), alpha=1e-8, n_restarts_optimizer=3, random_state=0)
         g.fit((X[tr] - m_) / s_, (y[tr] - a_) / b_)
-        y_cv[te] = g.predict((X[te] - m_) / s_) * b_ + a_
+        mu_te, sd_te = g.predict((X[te] - m_) / s_, return_std=True)
+        y_cv[te] = mu_te * b_ + a_
+        y_cv_std[te] = sd_te * b_
     r2_cv = 1 - np.sum((y - y_cv) ** 2) / np.sum((y - y.mean()) ** 2)
     print(f"{target}: 5-fold CV R^2 vs measured = {r2_cv:.4f}")
-    ax_cv.plot(y, y_cv, 'o', ms=4, alpha=0.7)
-    ax_cv.plot([y.min(), y.max()], [y.min(), y.max()], 'k--')
+    # fraction of held-out measurements falling inside the GP's 2-sigma band (the predictive std
+    # includes the learned noise, so ~95% is expected if the uncertainty is well calibrated)
+    cover = np.mean(np.abs(y - y_cv) <= 2 * y_cv_std)
+    print(f"{target}: 5-fold CV 2-sigma coverage = {100 * cover:.1f}%")
+    ax_cv.errorbar(y, y_cv, yerr=2 * y_cv_std, fmt='o', ms=3, alpha=0.4, elinewidth=0.5,
+                   label=f'GP mean ± 2σ ({100 * cover:.0f}% covered)')
+    ax_cv.plot([y.min(), y.max()], [y.min(), y.max()], 'k--', label='parity')
+    ax_cv.legend()
     ax_cv.set_xlabel(f'measured {target}')
     ax_cv.set_ylabel(f'GP predicted {target} (held-out)')
     ax_cv.set_title(f'{target} 5-fold CV  (R² = {r2_cv:.4f})')
