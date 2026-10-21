@@ -33,7 +33,7 @@ rho_j, Cp_j = 1000.0, 4.184    # Coolant properties
 V_sp = 12.0
 
 # Pack parameters into a single array
-params = [Fin, kc, CA0, CB0, CC0, T0,A1, Ea1, A2, Ea2, dH1, dH2, rho, Cp,U_a, Vj, Fj, Tj0, rho_j, Cp_j,V_sp]
+params = [Fin, kc, CA0, CB0, CC0, T0, A1, Ea1, A2, Ea2, dH1, dH2, rho, Cp,U_a, Vj, Fj, Tj0, rho_j, Cp_j,V_sp]
 # Solve the ODEs
 solution = solve_ivp(variable_volume_cstr_with_jacket, t_span, y0, args=([params]), t_eval=t_eval, method='RK45')
 

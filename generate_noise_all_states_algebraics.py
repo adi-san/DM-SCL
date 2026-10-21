@@ -141,6 +141,72 @@ def ss_for_DM(y, p):
     output=[dCA1_dt,dCB1_dt,dCC1_dt,dT1_dt,dTjR_dt,dCARet_dt,dCBRet_dt,dCCRet_dt,dTS_dt,dTjS_dt,K_A_diff,K_B_diff,K_C_diff]
 
     return output
+def ss_for_DM_A_b(p):
+    # TjS, CA1, CB1, CAPerm, CBPerm, CCPerm, r1, r2, theta_QR, theta_QS, K_A, K_B, K_C = y
+    # if something is measured, it is a parameter for a given solve
+    VR=p['VR']
+    VS=p['VS']
+    F0=p['F0']
+    CA0=p['CA0']
+    FR=p['FR']
+    F1=p['F1']
+    FjR=p['FjR']
+    FH=p['FH']
+    T0=p['T0']
+    VjR=p['VjR']
+    TCin=p['TCin']
+    Fpg=p['Fpg']
+    FH=p['FH']
+    VjS=p['VjS']
+    THin=p['THin']
+
+
+    CC1=p['CC1']
+    T1=p['T1']
+    TS=p['TS']
+    TjR=p['TjR']
+
+    
+    CARet=p['CARet']
+    CBRet=p['CBRet']
+    CCRet=p['CCRet']
+    b=np.array([F0*CA0/VR,0,(F0+FR)/VR*CC1,(F0*(T0-T1)+FR*(TS-T1))/VR,FjR/VjR*(TCin-TjR),(FR+Fpg-F1)/VS*CARet,
+                (FR+Fpg-F1)/VS*CBRet,(FR+Fpg-F1)/VS*CCRet+F1/VS*CC1,F1/VS*(T1-TS),FH/VjS*THin,0,0,0])
+    A=np.array([],
+               [],
+               [],
+               [],
+               [],
+               [],
+               [],
+               [],
+               [],
+               [],
+               [],
+               [],
+               [])
+    
+
+    # dCA1_dt = (F0 / VR) * (CA0 - CA1) + (FR / VR) * (CAPerm - CA1) - r1
+    # dCB1_dt = -(F0 / VR) * CB1 + (FR / VR) * (CBPerm - CB1) + r1 - r2
+    # dCC1_dt = -(F0 / VR) * CC1 + (FR / VR) * (CCPerm - CC1) + r2
+    # dT1_dt = ((F0 * (p['T0'] - T1) + FR * (TS - T1)) / VR 
+    #           + (-p['dH1'] * r1 - p['dH2'] * r2) / (p['rho'] * p['Cp']) 
+    #           - theta_QR / (p['rho'] * p['Cp'] * VR))
+    # dTjR_dt = (FjR / p['VjR']) * (p['TCin'] - TjR) + theta_QR / (p['rhoc'] * p['Cpc'] * p['VjR'])
+
+    # dCARet_dt = (F1 / VS) * (CA1 - CARet) + ((FR + p['Fpg']) / VS) * (CARet - CAPerm)
+    # dCBRet_dt = (F1 / VS) * (CB1 - CBRet) + ((FR + p['Fpg']) / VS) * (CBRet - CBPerm)
+    # dCCRet_dt = (F1 / VS) * (CC1 - CCRet) + ((FR + p['Fpg']) / VS) * (CCRet - CCPerm)
+    # dTS_dt = (F1 / VS) * (T1 - TS) + theta_QS / (p['rho'] * p['Cp'] * VS)
+    # dTjS_dt = (FH / p['VjS']) * (p['THin'] - TjS) - theta_QS / (p['rhoH'] * p['CpH'] * p['VjS'])
+    # K_A_diff=CAPerm-K_A*CARet
+    # K_B_diff=CBPerm-K_B*CBRet
+    # K_C_diff=CCPerm-K_C*CCRet
+
+    # output=[dCA1_dt,dCB1_dt,dCC1_dt,dT1_dt,dTjR_dt,dCARet_dt,dCBRet_dt,dCCRet_dt,dTS_dt,dTjS_dt,K_A_diff,K_B_diff,K_C_diff]
+
+    return 67
 
 
 
