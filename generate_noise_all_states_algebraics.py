@@ -318,4 +318,25 @@ print(data_DM_rK[unknown_names_rK + ['converged', 'residual_norm']].to_string())
 print(f"Converged: {data_DM_rK['converged'].sum()}/{len(data_DM_rK)}, max residual norm: {data_DM_rK['residual_norm'].max():.3e}")
 data_DM_rK.to_csv('noisy_r_kappa_DM.csv', index=False)
 
-# the reaction rate terms are nicely measured with CA1, CB1, along with rets meas, the kappa terms need some work!
+# the reaction rate terms are nicely measured with CA1, CB1, along with rets meas, the kappa terms need some work! 
+
+# make parity plots of 'CA1','CB1','CC1', 'CCPerm', 'r1', 'r2', 'K_A', 'K_B', 'K_C' with x axes being non-noisy from simulation and y_axes being their corresponding values in data_DM_rK
+parity_vars_rK = ['CA1', 'CB1', 'CC1', 'CCPerm', 'r1', 'r2', 'K_A', 'K_B', 'K_C']
+fig, axes = plt.subplots(3, 3, figsize=(15, 13))
+for ax, var in zip(axes.ravel(), parity_vars_rK):
+    x = data_clean[var].to_numpy(dtype=float)
+    y = data_DM_rK[var].to_numpy(dtype=float)
+    r2 = 1 - np.sum((x - y) ** 2) / np.sum((x - x.mean()) ** 2)
+    rmse = np.sqrt(np.mean((x - y) ** 2))
+    print(f"{var}: R^2 = {r2:.4f}, RMSE = {rmse:.4g}")
+    ax.plot(x, y, 'o', ms=4, alpha=0.7)
+    lims = [min(x.min(), y.min()), max(x.max(), y.max())]
+    ax.plot(lims, lims, 'k--', label='parity')
+    ax.set_xlabel(f'simulated {var} (no noise)')
+    ax.set_ylabel(f'DM {var} (noisy)')
+    ax.set_title(f'{var}  (R² = {r2:.4f})')
+    ax.legend()
+plt.tight_layout()
+plt.savefig('noisy_r_kappa_DM_parity.png', dpi=150)
+plt.close(fig)
+print("Saved noisy_r_kappa_DM_parity.png")
