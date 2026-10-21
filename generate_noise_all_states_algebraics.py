@@ -19,7 +19,7 @@ data_copy = data.copy()
 data_copy_2=data.copy()
 data_copy_3=data.copy()
 
-noise_level = 0.002  # 0.2% noise ensures that temp measurements stay between 2K of actual
+noise_level = 0.002 # 0.2% noise ensures that temp measurements stay between 2K of actual
 # add noise to the data for all columns except F0, FjR, and FH
 columns_to_add_noise = [col for col in data.columns if col not in ['F0', 'FjR', 'FH']]
 for col in columns_to_add_noise:
@@ -170,22 +170,31 @@ def ss_for_DM_A_b(p):
     CARet=p['CARet']
     CBRet=p['CBRet']
     CCRet=p['CCRet']
+
+    dH1=p['dH1']
+    dH2=p['dH2']
+    rho=p['rho']
+    Cp=p['Cp']
+    rhoc=p['rhoc']
+    Cpc=p['Cpc']
+    rhoH=p['rhoH']
+    CpH=p['CpH']
     b=np.array([F0*CA0/VR,0,(F0+FR)/VR*CC1,(F0*(T0-T1)+FR*(TS-T1))/VR,FjR/VjR*(TCin-TjR),(FR+Fpg-F1)/VS*CARet,
                 (FR+Fpg-F1)/VS*CBRet,(FR+Fpg-F1)/VS*CCRet+F1/VS*CC1,F1/VS*(T1-TS),FH/VjS*THin,0,0,0])
     A=np.array([
-	[0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0], 
-	[0, 0, 1, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0], 
-	[0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0], 
-	[0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0], 
-	[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0], 
-	[0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
-	[0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0], 
-	[0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], 
-	[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], 
-	[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], 
-	[0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0], 
-	[0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0], 
-	[0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0]
+	[0, (F0+FR)/VR, 0, -FR/VR, 0, 0, 1, 0, 0, 0, 0, 0, 0], 
+	[0, 0, -(F0+FR)/VR, 0, FR/VR, 0, 1, -1, 0, 0, 0, 0, 0], 
+	[0, 0, 0, 0, 0, FR/VR, 0, 1, 0, 0, 0, 0, 0], 
+	[0, 0, 0, 0, 0, 0, dH1/(rho*Cp), dH2/(rho*Cp), 0, 0, 0, 1/(rho*Cp*VR), 0], 
+	[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1/(rhoc*Cpc*VjR), 0], 
+	[0, -F1/VS, 0, (FR+Fpg)/VS, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
+	[0, 0, -F1/VS, 0, (FR+Fpg)/VS, 0, 0, 0, 0, 0, 0, 0, 0], 
+	[0, 0, 0, 0, 0, (FR+Fpg)/VS, 0, 0, 0, 0, 0, 0, 0], 
+	[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1/(rho*Cp*VS)], 
+	[FH/VjS, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1/(rhoH*CpH*VjS)], 
+	[0, 0, 0, -1, 0, 0, 0, 0, CARet, 0, 0, 0, 0], 
+	[0, 0, 0, 0, -1, 0, 0, 0, 0, CBRet, 0, 0, 0], 
+	[0, 0, 0, 0, 0, -1, 0, 0, 0, 0, CCRet, 0, 0]
     ])
     
 
@@ -208,29 +217,34 @@ def ss_for_DM_A_b(p):
 
     # output=[dCA1_dt,dCB1_dt,dCC1_dt,dT1_dt,dTjR_dt,dCARet_dt,dCBRet_dt,dCCRet_dt,dTS_dt,dTjS_dt,K_A_diff,K_B_diff,K_C_diff]
 
-    return 67
+    return A,b
 
 
 
 # solve for the unknowns row by row
-unknown_names = ['TjS', 'CA1', 'CB1', 'CAPerm', 'CBPerm', 'CCPerm', 'r1', 'r2', 'theta_QR', 'theta_QS', 'K_A', 'K_B', 'K_C']
+unknown_names = ['TjS', 'CA1', 'CB1', 'CAPerm', 'CBPerm', 'CCPerm', 'r1', 'r2', 'K_A', 'K_B', 'K_C', 'theta_QR', 'theta_QS']
 results = []
 for i, row in data_copy.iterrows():
     p = {**params, **row.to_dict()}  # measured values for this row override defaults (F0, FjR, FH)
     # initial guess: noisy row values for states, rough magnitudes for constitutive terms
     y0 = [row['TjS'], row['CA1'], row['CB1'], row['CAPerm'], row['CBPerm'], row['CCPerm'],
           0.1, 0.1, 1e6, 1e6, 0.5, 0.5, 0.5]
-    sol = fsolve(ss_for_DM, y0, args=(p,))
+    sol = fsolve(ss_for_DM, y0, args=(p,),xtol=1e-16)
+    A, b = ss_for_DM_A_b(p)
+    # print(np.linalg.cond(A))
+    sol=np.linalg.solve(A, b)
     res = dict(zip(unknown_names, sol))
-    res['residual_norm'] = np.linalg.norm(ss_for_DM(sol, p))
-    res['converged'] = res['residual_norm'] < 1e-6
+    res['condition number']=np.linalg.cond(A)
+    res['rank']=np.linalg.matrix_rank(A)
+    # res['residual_norm'] = np.linalg.norm(ss_for_DM(sol, p))
+    # res['converged'] = res['residual_norm'] < 1e-6
     results.append(res)
 
 results = pd.DataFrame(results, index=data_copy.index)
 # measured columns are kept from data_copy, unknown columns are replaced with solved values
 data_DM = data_copy.drop(columns=[c for c in unknown_names if c in data_copy.columns]).join(results)
-print(data_DM[unknown_names + ['converged', 'residual_norm']].to_string())
-print(f"Converged: {data_DM['converged'].sum()}/{len(data_DM)}, max residual norm: {data_DM['residual_norm'].max():.3e}")
+# print(data_DM[unknown_names + ['converged', 'residual_norm']].to_string())
+# print(f"Converged: {data_DM['converged'].sum()}/{len(data_DM)}, max residual norm: {data_DM['residual_norm'].max():.3e}")
 data_DM.to_csv('noisy_states_algebraics_DM.csv', index=False)
 
 # man this was an utter failure!
