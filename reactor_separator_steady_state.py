@@ -218,6 +218,13 @@ for F0 in np.linspace(5, 10, 4):  # Varying F0 from 5 to 10 m3/h
             else:
                 print(f"Solver failed for F0: {F0:.2f}, FjR: {FjR:.2f}, FH: {FH:.2f}. Message: {mesg}")
 # Save the DataFrame to a CSV file for training data
+"""Clean data
+# remove rows where (|(T1-TjR)| is less than 10 or |TS-TjS| is less than 10
+"""
+n_before = len(df)
+df = df[((df['T1'] - df['TjR']).abs() >= 10) & ((df['TS'] - df['TjS']).abs() >= 10)].reset_index(drop=True)
+print(f"Removed {n_before - len(df)} rows with temperature approach < 10 K; {len(df)} rows remain")
+
 
 # add the other constitutive terms to this df:
 df.to_csv('simulator_data_no_noise.csv', index=False)

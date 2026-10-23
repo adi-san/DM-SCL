@@ -3,6 +3,9 @@ import numpy as np
 from scipy.optimize import fsolve, least_squares
 from sklearn.linear_model import Ridge
 import mpmath as mp
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 np.random.seed(0)  # fix the noise so outputs are reproducible across runs
 
@@ -18,50 +21,58 @@ params = {
 # read the simulator data from the csv file
 data = pd.read_csv('simulator_data_no_noise.csv')
 data_copy = data.copy()
-data_copy_2=data.copy()
-data_copy_3=data.copy()
 
 noise_level = 0.002 # 0.2% noise ensures that temp measurements stay between 2K of actual
-# add noise to the data for all columns except F0, FjR, and FH
-columns_to_add_noise = [col for col in data.columns if col not in ['F0', 'FjR', 'FH']]
-for col in columns_to_add_noise:
-    # ensure that noise is generated homoscedastically, here it is heteroscedastic
+
+'''
+With DM, we deem that VR, VS, F1, FR, and FRet are well-det and so they are not noisy. The rest of the states and algebraics are noisy.
+'''
+columns_to_add_noise_DM = [col for col in data_copy.columns if col not in ['F0', 'FjR', 'FH', 'VR', 'VS', 'F1', 'FR', 'FRet']]
+noise_sigma_DM = {}  # std dev of the noise added to each column, used to weight least squares fits
+for col in columns_to_add_noise_DM:
+    min_col = data_copy[col].min()
+    max_col = data_copy[col].max()
+    ref_magnitude=min_col/2+max_col/2
+    noise_sigma_DM[col] = abs(ref_magnitude) * noise_level
+    data_copy[col] += ref_magnitude * noise_level * np.random.randn(len(data_copy))
+
+# regenerate noisy_states_algebraics_for_all.csv / _parity.png from the same noisy data used for the DM results
+# (data_copy), so noise is not added twice. Only the well-det volumes and flows (noise-free in DM) get noise here;
+# F0, FjR, and FH stay noise-free
+data_all = data_copy.copy()
+columns_to_add_noise_all = ['VR', 'VS', 'F1', 'FR', 'FRet']
+for col in columns_to_add_noise_all:
     min_col = data[col].min()
     max_col = data[col].max()
     ref_magnitude=min_col/2+max_col/2
-    data[col] += ref_magnitude * noise_level * np.random.randn(len(data))
+    data_all[col] += ref_magnitude * noise_level * np.random.randn(len(data_all))
 
 # calculate the constitutive terms from the noisy data using skeleton eqns
-theta_QR = -params['rhoc']*params['Cpc']*data['FjR']*(params['TCin']-data['TjR'])
-theta_QS = params['rhoH']*params['CpH']*data['FH']*(params['THin']-data['TjS'])
-r1 = (data['F0']*(params['CA0']-data['CA1']) + data['FR']*(data['CAPerm']-data['CA1']))/data['VR']
-r2 = (data['F0']*data['CC1']-data['FR']*(data['CCPerm']-data['CC1']))/data['VR']
-K_A = data['CAPerm']/data['CARet']
-K_B = data['CBPerm']/data['CBRet']
-K_C = data['CCPerm']/data['CCRet']
-# create a new dataframe with the noisy states and algebraics and the constitutive terms
-data['theta_QR'] = theta_QR
-data['theta_QS'] = theta_QS
-data['r1'] = r1
-data['r2'] = r2
-data['K_A'] = K_A
-data['K_B'] = K_B
-data['K_C'] = K_C
-data.to_csv('noisy_states_algebraics_for_all.csv', index=False)
+theta_QR = -params['rhoc']*params['Cpc']*data_all['FjR']*(params['TCin']-data_all['TjR'])
+theta_QS = params['rhoH']*params['CpH']*data_all['FH']*(params['THin']-data_all['TjS'])
+r1 = (data_all['F0']*(params['CA0']-data_all['CA1']) + data_all['FR']*(data_all['CAPerm']-data_all['CA1']))/data_all['VR']
+r2 = (data_all['F0']*data_all['CC1']-data_all['FR']*(data_all['CCPerm']-data_all['CC1']))/data_all['VR']
+K_A = data_all['CAPerm']/data_all['CARet']
+K_B = data_all['CBPerm']/data_all['CBRet']
+K_C = data_all['CCPerm']/data_all['CCRet']
+# overwrite the constitutive columns with the values computed from the noisy states and algebraics
+data_all['theta_QR'] = theta_QR
+data_all['theta_QS'] = theta_QS
+data_all['r1'] = r1
+data_all['r2'] = r2
+data_all['K_A'] = K_A
+data_all['K_B'] = K_B
+data_all['K_C'] = K_C
+data_all.to_csv('noisy_states_algebraics_for_all.csv', index=False)
 
-# make parity plots of all the columns with x axes being non-noisy from simulation and y_axes being their corresponding values in data
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-
-# data_copy is still the clean simulation at this point (noise was added to data in place)
-parity_vars_all = list(data.columns)
+# make parity plots of all the columns with x axes being non-noisy from simulation and y_axes being their corresponding values in data_all
+parity_vars_all = list(data_all.columns)
 n_cols_plot = 7
 n_rows_plot = int(np.ceil(len(parity_vars_all) / n_cols_plot))
 fig, axes = plt.subplots(n_rows_plot, n_cols_plot, figsize=(4 * n_cols_plot, 3.6 * n_rows_plot))
 for ax, var in zip(axes.ravel(), parity_vars_all):
-    x = data_copy[var].to_numpy(dtype=float)
-    y = data[var].to_numpy(dtype=float)
+    x = data[var].to_numpy(dtype=float)
+    y = data_all[var].to_numpy(dtype=float)
     ss_tot = np.sum((x - x.mean()) ** 2)
     r2_val = 1 - np.sum((x - y) ** 2) / ss_tot if ss_tot > 0 else np.nan
     ax.plot(x, y, 'o', ms=3, alpha=0.7)
@@ -76,18 +87,6 @@ plt.tight_layout()
 plt.savefig('noisy_states_algebraics_for_all_parity.png', dpi=120)
 plt.close(fig)
 print("Saved noisy_states_algebraics_for_all_parity.png")
-
-'''
-With DM, we deem that VR, VS, F1, FR, and FRet are well-det and so they are not noisy. The rest of the states and algebraics are noisy.
-'''
-columns_to_add_noise_DM = [col for col in data_copy.columns if col not in ['F0', 'FjR', 'FH', 'VR', 'VS', 'F1', 'FR', 'FRet']]
-noise_sigma_DM = {}  # std dev of the noise added to each column, used to weight least squares fits
-for col in columns_to_add_noise_DM:
-    min_col = data_copy[col].min()
-    max_col = data_copy[col].max()
-    ref_magnitude=min_col/2+max_col/2
-    noise_sigma_DM[col] = abs(ref_magnitude) * noise_level
-    data_copy[col] += ref_magnitude * noise_level * np.random.randn(len(data_copy))
 
 data_copy_2=data_copy.copy()
 data_copy_3=data_copy.copy()
@@ -337,7 +336,7 @@ data_DM_heat = data_copy_2.drop(columns=[c for c in unknown_names_heat if c in d
 data_DM_heat.to_csv('noisy_heat_DM.csv', index=False)
 
 # make parity plots of T1, TjR, TS, TjS, theta_QR, and theta_QS with x axes being non-noisy from simulation and y_axes being their corresponding values in data_DM_heat
-data_clean = pd.read_csv('simulator_data_no_noise.csv')  # 'data' had noise added in place, so reload the clean simulation
+data_clean = data  # 'data' is never modified, so it is the clean simulation
 parity_vars_heat = ['T1', 'TjR', 'TS', 'TjS', 'theta_QR', 'theta_QS']
 fig, axes = plt.subplots(2, 3, figsize=(15, 9))
 for ax, var in zip(axes.ravel(), parity_vars_heat):
@@ -957,55 +956,3 @@ plt.tight_layout()
 plt.savefig('noisy_heat_r_kappa_CCPerm_TjS_DM_parity.png', dpi=150)
 plt.close(fig)
 print("Saved noisy_heat_r_kappa_CCPerm_TjS_DM_parity.png")
-
-# regenerate noisy_states_algebraics_for_all.csv / _parity.png from the same noisy data used for the DM results
-# (data_copy), so noise is not added twice. Only the well-det volumes and flows (noise-free in DM) get noise here;
-# F0, FjR, and FH stay noise-free
-data_all = data_copy.copy()
-columns_to_add_noise_all = ['VR', 'VS', 'F1', 'FR', 'FRet']
-for col in columns_to_add_noise_all:
-    min_col = data_clean[col].min()
-    max_col = data_clean[col].max()
-    ref_magnitude=min_col/2+max_col/2
-    data_all[col] += ref_magnitude * noise_level * np.random.randn(len(data_all))
-
-# calculate the constitutive terms from the noisy data using skeleton eqns
-theta_QR = -params['rhoc']*params['Cpc']*data_all['FjR']*(params['TCin']-data_all['TjR'])
-theta_QS = params['rhoH']*params['CpH']*data_all['FH']*(params['THin']-data_all['TjS'])
-r1 = (data_all['F0']*(params['CA0']-data_all['CA1']) + data_all['FR']*(data_all['CAPerm']-data_all['CA1']))/data_all['VR']
-r2 = (data_all['F0']*data_all['CC1']-data_all['FR']*(data_all['CCPerm']-data_all['CC1']))/data_all['VR']
-K_A = data_all['CAPerm']/data_all['CARet']
-K_B = data_all['CBPerm']/data_all['CBRet']
-K_C = data_all['CCPerm']/data_all['CCRet']
-# overwrite the constitutive columns with the values computed from the noisy states and algebraics
-data_all['theta_QR'] = theta_QR
-data_all['theta_QS'] = theta_QS
-data_all['r1'] = r1
-data_all['r2'] = r2
-data_all['K_A'] = K_A
-data_all['K_B'] = K_B
-data_all['K_C'] = K_C
-data_all.to_csv('noisy_states_algebraics_for_all.csv', index=False)
-
-# make parity plots of all the columns with x axes being non-noisy from simulation and y_axes being their corresponding values in data_all
-parity_vars_all = list(data_all.columns)
-n_cols_plot = 7
-n_rows_plot = int(np.ceil(len(parity_vars_all) / n_cols_plot))
-fig, axes = plt.subplots(n_rows_plot, n_cols_plot, figsize=(4 * n_cols_plot, 3.6 * n_rows_plot))
-for ax, var in zip(axes.ravel(), parity_vars_all):
-    x = data_clean[var].to_numpy(dtype=float)
-    y = data_all[var].to_numpy(dtype=float)
-    ss_tot = np.sum((x - x.mean()) ** 2)
-    r2_val = 1 - np.sum((x - y) ** 2) / ss_tot if ss_tot > 0 else np.nan
-    ax.plot(x, y, 'o', ms=3, alpha=0.7)
-    lims = [min(x.min(), y.min()), max(x.max(), y.max())]
-    ax.plot(lims, lims, 'k--')
-    ax.set_xlabel(f'simulated {var} (no noise)')
-    ax.set_ylabel(f'{var} (noisy)')
-    ax.set_title(f'{var}  (R² = {r2_val:.4f})')
-for ax in axes.ravel()[len(parity_vars_all):]:
-    ax.axis('off')
-plt.tight_layout()
-plt.savefig('noisy_states_algebraics_for_all_parity.png', dpi=120)
-plt.close(fig)
-print("Saved noisy_states_algebraics_for_all_parity.png")
