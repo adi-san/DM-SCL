@@ -170,12 +170,16 @@ else:
 # for every F0, vary the inlet flow of the cooling fluid and the heating fluid to see how the heat transfer coefficients change
 # store the solver results for each combination of F0, TCin, and THin to create a dataset for training a model to predict heat transfer coefficients based on these inputs.
 #  also add F1, FR, and FRet to the dataset
+# Replace the three for lines in your data-generation loop with:
+# for F0 in [2, 4, 6, 8, 10]:               # smaller F0 -> smaller VR -> larger approach
+#     for FjR in [8, 15, 30, 60, 120]:      # log-spaced coolant flow
+#         for FH in [10, 20, 40]:
 df = pd.DataFrame(columns=[
     'F0', 'FjR', 'FH',
     'VR', 'CA1', 'CB1', 'CC1', 'T1', 'TjR', 'VS', 'CARet', 'CBRet', 'CCRet', 'TS', 'TjS','CAPerm', 'CBPerm', 'CCPerm','F1', 'FR', 'FRet','r1','r2','K_A','K_B','K_C','theta_QR','theta_QS'])
-for F0 in np.linspace(5, 10, 4):  # Varying F0 from 5 to 10 m3/h
-    for FjR in np.linspace(5, 20, 4):  # Varying cooling fluid inlet flow from 15 to 45 m3/h
-        for FH in np.linspace(5, 20, 4):  # Varying heating fluid inlet flow from 5 to 35 m3/h
+for F0 in [2,5,8,10]:  # Varying F0 from 5 to 10 m3/h
+    for FjR in [8,15,30,60]:  # Varying cooling fluid inlet flow from 15 to 45 m3/h
+        for FH in [10,20,40]:  # Varying heating fluid inlet flow from 5 to 35 m3/h
             # Update parameters
             params['F0'] = F0
             params['FjR'] = FjR
