@@ -178,7 +178,7 @@ df = pd.DataFrame(columns=[
     'F0', 'FjR', 'FH',
     'VR', 'CA1', 'CB1', 'CC1', 'T1', 'TjR', 'VS', 'CARet', 'CBRet', 'CCRet', 'TS', 'TjS','CAPerm', 'CBPerm', 'CCPerm','F1', 'FR', 'FRet','r1','r2','K_A','K_B','K_C','theta_QR','theta_QS'])
 for F0 in [2,5,8,10]:  # Varying F0 from 5 to 10 m3/h
-    for FjR in [8,15,30,60]:  # Varying cooling fluid inlet flow from 15 to 45 m3/h
+    for FjR in [8,20,50,80]:  # Varying cooling fluid inlet flow from 15 to 45 m3/h
         for FH in [10,20,40]:  # Varying heating fluid inlet flow from 5 to 35 m3/h
             # Update parameters
             params['F0'] = F0
