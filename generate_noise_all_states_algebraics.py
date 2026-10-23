@@ -809,3 +809,203 @@ plt.tight_layout()
 plt.savefig('noisy_heat_r_kappa_CCPerm_DM_parity.png', dpi=150)
 plt.close(fig)
 print("Saved noisy_heat_r_kappa_CCPerm_DM_parity.png")
+
+
+def ss_DM_heat_plus_rK_plus_CCPerm_plus_TjS(p, sigma):
+    # Measured: T1, TjR, TS, TjS, CARet, CBRet, CCRet, CAPerm, CBPerm, CCPerm
+    # overdet vars CA1, CB1, CC1, r1, r2, theta_QR, theta_QS
+    # Welldet vars K_A, K_B, K_C
+    # sigma: dict of measurement noise std devs, used to weight the overdetermined least squares
+    VR=p['VR']
+    VS=p['VS']
+    F0=p['F0']
+    CA0=p['CA0']
+    FR=p['FR']
+    F1=p['F1']
+    FjR=p['FjR']
+    FH=p['FH']
+    T1=p['T1']
+    TS=p['TS']
+    TjR=p['TjR']
+    TjS=p['TjS']
+    CARet=p['CARet']
+    CBRet=p['CBRet']
+    CCRet=p['CCRet']
+    CAPerm=p['CAPerm']
+    CBPerm=p['CBPerm']
+    CCPerm=p['CCPerm']
+
+    T0=p['T0']
+    Fpg=p['Fpg']
+    VjR=p['VjR']
+    TCin=p['TCin']
+    VjS=p['VjS']
+    THin=p['THin']
+    dH1=p['dH1']
+    dH2=p['dH2']
+    rho=p['rho']
+    Cp=p['Cp']
+    rhoc=p['rhoc']
+    Cpc=p['Cpc']
+    rhoH=p['rhoH']
+    CpH=p['CpH']
+    # solve a least squares problem with the overdetermined (CA1, CB1, CC1, r1, r2 theta_QR, theta_QS) and the following equations:
+    # dCA1_dt = (F0 / VR) * (CA0 - CA1) + (FR / VR) * (CAPerm - CA1) - r1
+    # dCB1_dt = -(F0 / VR) * CB1 + (FR / VR) * (CBPerm - CB1) + r1 - r2
+    # dCC1_dt = -(F0 / VR) * CC1 + (FR / VR) * (CCPerm - CC1) + r2
+    # dT1_dt = ((F0 * (p['T0'] - T1) + FR * (TS - T1)) / VR
+    #             + (-p['dH1'] * r1 - p['dH2'] * r2) / (p['rho'] * p['Cp'])
+    #             - theta_QR / (p['rho'] * p['Cp'] * VR))
+    # dTjR_dt = (FjR / p['VjR']) * (p['TCin'] - TjR) + theta_QR / (p['rhoc'] * p['Cpc'] * p['VjR'])
+    # dCARet_dt = (F1 / VS) * (CA1 - CARet) + ((FR + p['Fpg']) / VS) * (CARet - CAPerm)
+    # dCBRet_dt = (F1 / VS) * (CB1 - CBRet) + ((FR + p['Fpg']) / VS) * (CBRet - CBPerm)
+    # dCCRet_dt = (F1 / VS) * (CC1 - CCRet) + ((FR + p['Fpg']) / VS) * (CCRet - CCPerm)
+    # dTS_dt = (F1 / VS) * (T1 - TS) + theta_QS / (p['rho'] * p['Cp'] * VS)
+    # dTjS_dt = (FH / p['VjS']) * (p['THin'] - TjS) - theta_QS / (p['rhoH'] * p['CpH'] * p['VjS'])
+    # CA1, CB1, CC1, r1, r2, theta_QR, theta_QS
+    b_od=np.array([F0/VR*CA0+FR/VR*CAPerm,-FR/VR*CBPerm,FR/VR*CCPerm,(F0*(T0-T1)+FR*(TS-T1))/VR,FjR/VjR*(TCin-TjR),
+                   (FR+Fpg-F1)/VS*CARet-(FR+Fpg)/VS*CAPerm,(FR+Fpg-F1)/VS*CBRet-(FR+Fpg)/VS*CBPerm,
+                   (FR+Fpg-F1)/VS*CCRet-(FR+Fpg)/VS*CCPerm,F1/VS*(T1-TS),FH/VjS*(THin-TjS)])
+    A_od=np.array([
+        [(F0+FR)/VR,0,0,1,0,0,0],
+        [0,-(F0+FR)/VR,0,1,-1,0,0],
+        [0,0,(F0+FR)/VR,0,-1,0,0],
+        [0,0,0,dH1/(rho*Cp),dH2/(rho*Cp),1/(rho*Cp*VR),0],
+        [0,0,0,0,0,-1/(rhoc*Cpc*VjR),0],
+        [-F1/VS,0,0,0,0,0,0],
+        [0,-F1/VS,0,0,0,0,0],
+        [0,0,-F1/VS,0,0,0,0],
+        [0,0,0,0,0,0,-1/(rho*Cp*VS)],
+        [0,0,0,0,0,0,1/(rhoH*CpH*VjS)]
+    ])
+    # weight each equation by the noise it carries (generalized least squares)
+    # A_od has no measurements in it, so the residual noise is J * (measurement noise), J = db_od/dm
+    # measurements m: T1, TjR, TS, TjS, CARet, CBRet, CCRet, CAPerm, CBPerm, CCPerm
+    meas_od = ['T1', 'TjR', 'TS', 'TjS', 'CARet', 'CBRet', 'CCRet', 'CAPerm', 'CBPerm', 'CCPerm']
+    J_od=np.array([
+        [0,0,0,0,0,0,0,FR/VR,0,0],
+        [0,0,0,0,0,0,0,0,-FR/VR,0],
+        [0,0,0,0,0,0,0,0,0,FR/VR],
+        [-(F0+FR)/VR,0,FR/VR,0,0,0,0,0,0,0],
+        [0,-FjR/VjR,0,0,0,0,0,0,0,0],
+        [0,0,0,0,(FR+Fpg-F1)/VS,0,0,-(FR+Fpg)/VS,0,0],
+        [0,0,0,0,0,(FR+Fpg-F1)/VS,0,0,-(FR+Fpg)/VS,0],
+        [0,0,0,0,0,0,(FR+Fpg-F1)/VS,0,0,-(FR+Fpg)/VS],
+        [F1/VS,0,-F1/VS,0,0,0,0,0,0,0],
+        [0,0,0,-FH/VjS,0,0,0,0,0,0]
+    ])
+    sig_od = np.array([sigma[m] for m in meas_od])
+    # residual covariance (equations sharing a measurement have correlated errors, e.g. the T1 and TS balances)
+    Sigma_od = (J_od * sig_od**2) @ J_od.T
+    L_od = np.linalg.cholesky(Sigma_od)
+    # whiten: min ||L^-1 (A x - b)||
+    A_od_w = np.linalg.solve(L_od, A_od)
+    b_od_w = np.linalg.solve(L_od, b_od)
+    # column scaling only (does not change the solution, just the conditioning), x = Dc z
+    _, Dc_od = ruiz_scaling(A_od_w)
+    z_od = np.linalg.lstsq(A_od_w * Dc_od[None, :], b_od_w, rcond=None)[0]
+    sol_od = Dc_od * z_od
+
+    # then use the results of the least squares solution to compute the well-det vars (K_A, K_B, K_C) using the following equations:
+    # K_A_diff=CAPerm-K_A*CARet
+    # K_B_diff=CBPerm-K_B*CBRet
+    # K_C_diff=CCPerm-K_C*CCRet
+    # note: these only involve measured values, so they do not depend on the least squares solution
+    # K_A, K_B, K_C
+    b_wd=np.array([CAPerm,CBPerm,CCPerm])
+    A_wd=np.diag([CARet,CBRet,CCRet])
+    sol_wd = np.linalg.solve(A_wd, b_wd)
+
+    # the function outputs the solutions to both the overdetermined and well-determined values
+    return sol_od, sol_wd
+
+# solve for the heat + reaction/partition unknowns (with CCPerm and TjS measured) row by row
+data_copy_6=data_copy.copy()
+unknown_names_od_CCPerm_TjS = ['CA1', 'CB1', 'CC1', 'r1', 'r2', 'theta_QR', 'theta_QS']
+unknown_names_wd_CCPerm_TjS = ['K_A', 'K_B', 'K_C']
+unknown_names_heat_rK_CCPerm_TjS = unknown_names_od_CCPerm_TjS + unknown_names_wd_CCPerm_TjS
+results_heat_rK_CCPerm_TjS = []
+for i, row in data_copy_6.iterrows():
+    p = {**params, **row.to_dict()}  # measured values for this row override defaults (F0, FjR, FH)
+    sol_od, sol_wd = ss_DM_heat_plus_rK_plus_CCPerm_plus_TjS(p, noise_sigma_DM)
+    res = dict(zip(unknown_names_od_CCPerm_TjS, sol_od))
+    res.update(zip(unknown_names_wd_CCPerm_TjS, sol_wd))
+    results_heat_rK_CCPerm_TjS.append(res)
+
+results_heat_rK_CCPerm_TjS = pd.DataFrame(results_heat_rK_CCPerm_TjS, index=data_copy_6.index)
+# measured columns are kept from data_copy_6, unknown columns are replaced with solved values
+data_DM_heat_rK_CCPerm_TjS = data_copy_6.drop(columns=[c for c in unknown_names_heat_rK_CCPerm_TjS if c in data_copy_6.columns]).join(results_heat_rK_CCPerm_TjS)
+data_DM_heat_rK_CCPerm_TjS.to_csv('noisy_heat_r_kappa_CCPerm_TjS_DM.csv', index=False)
+
+# make parity plots of the solved variables (plus measured CCPerm and TjS) with x axes being non-noisy from simulation and y_axes being their corresponding values in data_DM_heat_rK_CCPerm_TjS
+parity_vars_heat_rK_CCPerm_TjS = unknown_names_heat_rK_CCPerm_TjS + ['CCPerm', 'TjS']
+fig, axes = plt.subplots(3, 4, figsize=(20, 13))
+for ax, var in zip(axes.ravel(), parity_vars_heat_rK_CCPerm_TjS):
+    x = data_clean[var].to_numpy(dtype=float)
+    y = data_DM_heat_rK_CCPerm_TjS[var].to_numpy(dtype=float)
+    r2 = 1 - np.sum((x - y) ** 2) / np.sum((x - x.mean()) ** 2)
+    rmse = np.sqrt(np.mean((x - y) ** 2))
+    print(f"{var}: R^2 = {r2:.4f}, RMSE = {rmse:.4g}")
+    ax.plot(x, y, 'o', ms=4, alpha=0.7)
+    lims = [min(x.min(), y.min()), max(x.max(), y.max())]
+    ax.plot(lims, lims, 'k--', label='parity')
+    ax.set_xlabel(f'simulated {var} (no noise)')
+    ax.set_ylabel(f'DM {var} (noisy)')
+    ax.set_title(f'{var}  (R² = {r2:.4f})')
+    ax.legend()
+plt.tight_layout()
+plt.savefig('noisy_heat_r_kappa_CCPerm_TjS_DM_parity.png', dpi=150)
+plt.close(fig)
+print("Saved noisy_heat_r_kappa_CCPerm_TjS_DM_parity.png")
+
+# regenerate noisy_states_algebraics_for_all.csv / _parity.png from the same noisy data used for the DM results
+# (data_copy), so noise is not added twice. Only the well-det volumes and flows (noise-free in DM) get noise here;
+# F0, FjR, and FH stay noise-free
+data_all = data_copy.copy()
+columns_to_add_noise_all = ['VR', 'VS', 'F1', 'FR', 'FRet']
+for col in columns_to_add_noise_all:
+    min_col = data_clean[col].min()
+    max_col = data_clean[col].max()
+    ref_magnitude=min_col/2+max_col/2
+    data_all[col] += ref_magnitude * noise_level * np.random.randn(len(data_all))
+
+# calculate the constitutive terms from the noisy data using skeleton eqns
+theta_QR = -params['rhoc']*params['Cpc']*data_all['FjR']*(params['TCin']-data_all['TjR'])
+theta_QS = params['rhoH']*params['CpH']*data_all['FH']*(params['THin']-data_all['TjS'])
+r1 = (data_all['F0']*(params['CA0']-data_all['CA1']) + data_all['FR']*(data_all['CAPerm']-data_all['CA1']))/data_all['VR']
+r2 = (data_all['F0']*data_all['CC1']-data_all['FR']*(data_all['CCPerm']-data_all['CC1']))/data_all['VR']
+K_A = data_all['CAPerm']/data_all['CARet']
+K_B = data_all['CBPerm']/data_all['CBRet']
+K_C = data_all['CCPerm']/data_all['CCRet']
+# overwrite the constitutive columns with the values computed from the noisy states and algebraics
+data_all['theta_QR'] = theta_QR
+data_all['theta_QS'] = theta_QS
+data_all['r1'] = r1
+data_all['r2'] = r2
+data_all['K_A'] = K_A
+data_all['K_B'] = K_B
+data_all['K_C'] = K_C
+data_all.to_csv('noisy_states_algebraics_for_all.csv', index=False)
+
+# make parity plots of all the columns with x axes being non-noisy from simulation and y_axes being their corresponding values in data_all
+parity_vars_all = list(data_all.columns)
+n_cols_plot = 7
+n_rows_plot = int(np.ceil(len(parity_vars_all) / n_cols_plot))
+fig, axes = plt.subplots(n_rows_plot, n_cols_plot, figsize=(4 * n_cols_plot, 3.6 * n_rows_plot))
+for ax, var in zip(axes.ravel(), parity_vars_all):
+    x = data_clean[var].to_numpy(dtype=float)
+    y = data_all[var].to_numpy(dtype=float)
+    ss_tot = np.sum((x - x.mean()) ** 2)
+    r2_val = 1 - np.sum((x - y) ** 2) / ss_tot if ss_tot > 0 else np.nan
+    ax.plot(x, y, 'o', ms=3, alpha=0.7)
+    lims = [min(x.min(), y.min()), max(x.max(), y.max())]
+    ax.plot(lims, lims, 'k--')
+    ax.set_xlabel(f'simulated {var} (no noise)')
+    ax.set_ylabel(f'{var} (noisy)')
+    ax.set_title(f'{var}  (R² = {r2_val:.4f})')
+for ax in axes.ravel()[len(parity_vars_all):]:
+    ax.axis('off')
+plt.tight_layout()
+plt.savefig('noisy_states_algebraics_for_all_parity.png', dpi=120)
+plt.close(fig)
+print("Saved noisy_states_algebraics_for_all_parity.png")
