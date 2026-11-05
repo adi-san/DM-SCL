@@ -348,6 +348,7 @@ def simulate(p, y0, cons, rtol=1e-6, atol=1e-8):
 
 
 dyn_rows = []
+results = {}                                                         # scenario -> (truth, traj), reused by the paper figures below
 for si, (skey, (stitle, step)) in enumerate(scenarios.items()):
     p = {**params, 'F0': step[0], 'FjR': step[1], 'FH': step[2]}     # inputs jump at t = 0; states start at the nominal steady state
     truth = simulate(p, y_ss, true_cons, rtol=1e-8, atol=1e-10)
@@ -366,6 +367,7 @@ for si, (skey, (stitle, step)) in enumerate(scenarios.items()):
             dyn_rows.append({'scenario': skey, 'approach': approach, 'state': s, 'NRMSE_mean_surrogate': nrmse[k],
                              'frac_true_inside_95band': inside[k], 'failed_draws': n_failed})
 
+    results[skey] = (truth, traj)
     fig, axes = plt.subplots(4, 3, figsize=(13, 13), sharex=True)
     for k, (ax, s, u) in enumerate(zip(axes.ravel(), STATES, UNITS)):
         for approach in data:
@@ -401,3 +403,39 @@ print(f"\n=== dynamic test, averaged over the {len(gp_states)} states that depen
 print("NRMSE = RMSE of the GP-mean surrogate vs true, divided by the state's range in the training data;")
 print("inside95 = fraction of time the true trajectory lies inside the 95% band of the GP posterior draws")
 print(d.unstack('approach').loc[list(scenarios)].round(3).to_string())
+
+
+# ---------------- 7) paper figures: F0 step up, CA1 / CB1 / T1 / TS in SI units ----------------
+# concentrations kmol/m^3 -> mol/m^3 (x1000), time h -> s (x3600), temperature stays in K; the 95% bands are converted too
+paper_states = {'CA1': (r'$C_{A,1}$', 'mol/m$^3$', 1e3), 'CB1': (r'$C_{B,1}$', 'mol/m$^3$', 1e3),
+                'T1': (r'$T_1$', 'K', 1.0), 'TS': (r'$T_S$', 'K', 1.0)}
+truth, traj = results['F0_up']
+t_s = t_eval * 3600.0
+BLACK_AXES = {'axes.edgecolor': 'black', 'axes.labelcolor': 'black', 'xtick.color': 'black', 'ytick.color': 'black'}
+with plt.rc_context(BLACK_AXES):
+    # concentrations in the top row, temperatures in the bottom row
+    fig, axes = plt.subplots(2, 2, figsize=(9.6, 6.8), sharex=True)
+    for ax, (s, (sym, unit, f)), tag in zip(axes.ravel(), paper_states.items(), 'abcd'):
+        k = STATES.index(s)
+        for approach in data:
+            mean_traj, lo, hi = traj[approach]
+            ax.fill_between(t_s, f * lo[k], f * hi[k], color=COLORS[approach], alpha=0.25, lw=0, zorder=2)
+            ax.plot(t_s, f * mean_traj[k], color=COLORS[approach], lw=1.8, zorder=3)
+        ax.plot(t_s, f * truth[k], color='black', lw=1.8, ls='--', zorder=4)
+        ax.set_xlim(0, t_s[-1])
+        ax.set_xticks(np.arange(0, t_s[-1] + 1, 18000))
+        ax.ticklabel_format(useOffset=False, axis='y')
+        ax.set_ylabel(f'{sym} [{unit}]', fontsize=11)
+        ax.tick_params(labelsize=9.5)
+        ax.text(0.02, 0.97, f'({tag})', transform=ax.transAxes, va='top', fontsize=11, color='black')
+    for ax in axes[1]:
+        ax.set_xlabel('time [s]', fontsize=11)
+    handles = [Line2D([0], [0], color='black', lw=1.8, ls='--', label='true simulation')]
+    handles += [Line2D([0], [0], color=COLORS[a], lw=1.8, label=f'GP surrogate, {LABELS[a]}') for a in data]
+    handles += [matplotlib.patches.Patch(facecolor=MUTED, alpha=0.35, lw=0, label='95% band of posterior draws')]
+    fig.legend(handles=handles, loc='upper center', ncol=4, fontsize=9, bbox_to_anchor=(0.5, 1.0))
+    plt.tight_layout(rect=(0, 0, 1, 0.94))
+    for ext in ('png', 'pdf'):
+        plt.savefig(f'gp_paper_F0_up.{ext}', dpi=300)
+    plt.close(fig)
+print("saved gp_paper_F0_up.png/.pdf")
